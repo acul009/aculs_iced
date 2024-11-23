@@ -3,6 +3,7 @@ name = "frozen_term"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+description = "A terminal emulator to embed into your iced application - includes demo app"
 
 [dependencies]
 iced = { version = "0.13.1", features = ["advanced"] }
