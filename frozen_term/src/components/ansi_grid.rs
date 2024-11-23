@@ -2,57 +2,20 @@ use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
 use iced::{
-    widget::{button, column, container, row, text}, Border, Color
+    widget::{ container,  text},  Color
 };
 
 use iced::Element;
 
+use super::text_grid::{Format, Symbol, TextGrid};
+
 pub struct AnsiGrid {
     cursor_x: usize,
     cursor_y: usize,
-    width: usize,
-    height: usize,
-    grid: Vec<Symbol>,
     cursor_format: Format,
+    grid: TextGrid,
     state: ParserState,
     characters_parsed: Arc<Mutex<usize>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Symbol {
-    c: char,
-    format: Format,
-}
-
-#[derive(Debug, Clone)]
-pub struct Format {
-    foreground: Option<Color>,
-    background: Option<Color>,
-    bold: bool,
-    faint: bool,
-    italic: bool,
-    underline: bool,
-    blinking: bool,
-    inverse: bool,
-    hidden: bool,
-    strikethrough: bool,
-}
-
-impl Default for Format {
-    fn default() -> Self {
-        Self {
-            foreground: None,
-            background: None,
-            bold: false,
-            faint: false,
-            italic: false,
-            underline: false,
-            blinking: false,
-            inverse: false,
-            hidden: false,
-            strikethrough: false,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -96,19 +59,19 @@ impl AnsiGrid {
         Self {
             cursor_x: 0,
             cursor_y: 0,
-            width,
-            height,
             cursor_format: Default::default(),
-            grid: vec![
-                Symbol {
-                    c: ' ',
-                    format: Default::default()
-                };
-                width * height
-            ],
+            grid: TextGrid::new(width, height),
             state: ParserState::Write,
             characters_parsed: Arc::new(Mutex::new(0)),
         }
+    }
+
+    pub fn width(&self) -> usize {
+        self.grid.width()
+    }
+
+    pub fn height(&self) -> usize {
+        self.grid.height()
     }
 
     pub fn parse(&mut self, input: &str) -> Result<(), ParseTrace> {
@@ -119,7 +82,7 @@ impl AnsiGrid {
         });
 
         while let Some(c) = chars.next() {
-            let result = if self.cursor_x >= self.width || self.cursor_y >= self.height {
+            let result = if self.cursor_x >= self.grid.width() || self.cursor_y >= self.grid.height() {
                 Err(ParserError::CursorOutOfBounds(self.cursor_x, self.cursor_y))
             } else {
                 match &mut self.state {
@@ -228,10 +191,10 @@ impl AnsiGrid {
             }
             _ => {
                 if !c.is_control() {
-                    self.grid[self.cursor_y * self.width + self.cursor_x] = Symbol {
+                    self.grid.set_symbol(self.cursor_x, self.cursor_y,  Symbol {
                         c,
                         format: self.cursor_format.clone(),
-                    };
+                    }).unwrap();
                     self.cursor_x += 1;
                     self.fix_cursor_bounds();
                 } else {
@@ -243,22 +206,13 @@ impl AnsiGrid {
     }
 
     pub fn fix_cursor_bounds(&mut self) {
-        if self.cursor_x >= self.width {
-            self.cursor_x -= self.width;
+        if self.cursor_x >= self.width() {
+            self.cursor_x -= self.width();
             self.cursor_y += 1;
         }
-        if self.cursor_y >= self.height {
-            self.push_row();
+        if self.cursor_y >= self.height() {
+            self.grid.push_row();
             self.cursor_y -= 1;
-        }
-    }
-
-    pub fn push_row(&mut self) {
-        // copy each row to the next in reverse order to avoid losing data
-        for y in 0..(self.height - 1) {
-            for x in 0..self.width {
-                self.grid[y * self.width + x] = self.grid[(y + 1) * self.width + x].clone();
-            }
         }
     }
 
@@ -293,27 +247,27 @@ impl AnsiGrid {
                 },
                 'B' => match stack.len() {
                     0 => {
-                        self.cursor_y = (self.cursor_y + 1) % self.height;
+                        self.cursor_y = (self.cursor_y + 1) % self.height();
                     }
                     1 => {
                         self.cursor_y = (self.cursor_y
                             + stack[0]
                                 .parse::<usize>()
                                 .map_err(|_| ParserError::InvalidArgument(c, stack[0].clone()))?)
-                            % self.height;
+                            % self.height();
                     }
                     _ => return Err(ParserError::InvalidNumberOfArguments(c, stack.len())),
                 },
                 'C' => match stack.len() {
                     0 => {
-                        self.cursor_x = (self.cursor_x + 1) % self.width;
+                        self.cursor_x = (self.cursor_x + 1) % self.width();
                     }
                     1 => {
                         self.cursor_x = (self.cursor_x
                             + stack[0]
                                 .parse::<usize>()
                                 .map_err(|_| ParserError::InvalidArgument(c, stack[0].clone()))?)
-                            % self.width;
+                            % self.width();
                     }
                     _ => return Err(ParserError::InvalidNumberOfArguments(c, stack.len())),
                 },
@@ -336,7 +290,7 @@ impl AnsiGrid {
                             + stack[0]
                                 .parse::<usize>()
                                 .map_err(|_| ParserError::InvalidArgument(c, stack[0].clone()))?)
-                            % self.height;
+                            % self.height();
                         self.cursor_x = 0;
                     }
                     _ => return Err(ParserError::InvalidNumberOfArguments(c, stack.len())),
@@ -358,7 +312,7 @@ impl AnsiGrid {
                             .parse::<usize>()
                             .map_err(|_| ParserError::InvalidArgument(c, stack[0].clone()))?
                             + 1)
-                            % self.width;
+                            % self.width();
                     }
                     _ => return Err(ParserError::InvalidNumberOfArguments(c, stack.len())),
                 },
@@ -372,7 +326,7 @@ impl AnsiGrid {
                             .parse::<usize>()
                             .map_err(|_| ParserError::InvalidArgument(c, stack[0].clone()))?
                             + 1)
-                            % self.height;
+                            % self.height();
                         self.cursor_x = 0;
                     }
                     2 => {
@@ -380,32 +334,31 @@ impl AnsiGrid {
                             .parse::<usize>()
                             .map_err(|_| ParserError::InvalidArgument(c, stack[0].clone()))?
                             + 1)
-                            % self.height;
+                            % self.grid.height();
                         self.cursor_x = (stack[1]
                             .parse::<usize>()
                             .map_err(|_| ParserError::InvalidArgument(c, stack[1].clone()))?
                             + 1)
-                            % self.width;
+                            % self.width();
                     }
                     _ => return Err(ParserError::InvalidNumberOfArguments(c, stack.len())),
                 },
                 'J' => match stack.len() {
                     0 => {
-                        self.grid[self.cursor_y * self.width + self.cursor_x..].fill(Symbol {
+                        self.grid.fill_range(self.cursor_y * self.width() + self.cursor_x.., Symbol {
                             c: ' ',
                             format: self.cursor_format.clone(),
-                        });
+                        }).unwrap();
                     }
                     _ => return Err(ParserError::InvalidNumberOfArguments(c, stack.len())),
                 },
                 'K' => match stack.len() {
                     0 => {
-                        self.grid[self.cursor_y * self.width + self.cursor_x
-                            ..(self.cursor_y + 1) * self.width - 1]
-                            .fill(Symbol {
+                        self.grid.fill_range(self.cursor_y * self.width() + self.cursor_x
+                            ..(self.cursor_y + 1) * self.width() - 1, Symbol {
                                 c: ' ',
                                 format: self.cursor_format.clone(),
-                            });
+                            }).unwrap();
                     }
                     _ => return Err(ParserError::InvalidNumberOfArguments(c, stack.len())),
                 },
@@ -629,10 +582,6 @@ impl AnsiGrid {
         })
     }
 
-    pub fn rows(&self) -> Vec<&[Symbol]> {
-        self.grid.chunks(self.width).collect()
-    }
-
     pub fn view<
     'a,
     Message,
@@ -648,25 +597,6 @@ impl AnsiGrid {
         <Theme as text::Catalog>::Class<'a>: From<iced_core::widget::text::StyleFn<'a, Theme>>,
         <Theme as iced_widget::container::Catalog>::Class<'a>: From<iced_widget::container::StyleFn<'a, Theme>>,
     {
-        container(
-        column(self.rows().iter().map(|r| {
-            row(r.iter().map(|symbol| {
-                text(symbol.c.to_string())
-                    .color_maybe(symbol.format.foreground)
-                    .width(12)
-                    .center()
-                    .into()
-            }))
-            .into()
-        }))
-    ).style(|_| container::Style {
-        border: Border {
-            radius: Default::default(),
-            width: 2.0,
-            color: Color::from_rgb(0.5, 0.5, 0.5)
-        },
-        ..Default::default()
-    })
-        .into()
+        self.grid.view()
     }
 }
