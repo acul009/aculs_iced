@@ -1,10 +1,16 @@
 use std::ops::RangeBounds;
 
-use iced::{Border, Color, Element};
-use iced_widget::{column, container, row, text};
+use iced::{
+    advanced::{
+        self, layout,
+        renderer::{self, Quad},
+        text::{self, Paragraph},
+        widget::Widget,
+    },
+    alignment::{Horizontal, Vertical},
+    Background, Color, Element, Font, Length, Point, Rectangle, Size,
+};
 use thiserror::Error;
-
-
 
 #[derive(Debug, Clone)]
 pub struct Symbol {
@@ -64,7 +70,13 @@ impl TextGrid {
         Self {
             width,
             height,
-            grid: vec![Symbol { c: ' ', format: Default::default() }; width * height],
+            grid: vec![
+                Symbol {
+                    c: ' ',
+                    format: Default::default()
+                };
+                width * height
+            ],
         }
     }
 
@@ -76,7 +88,12 @@ impl TextGrid {
         self.height
     }
 
-    pub fn set_symbol(&mut self, x: usize, y: usize, symbol: Symbol) -> Result<(), OutOfBoundsError> {
+    pub fn set_symbol(
+        &mut self,
+        x: usize,
+        y: usize,
+        symbol: Symbol,
+    ) -> Result<(), OutOfBoundsError> {
         if x >= self.width {
             return Err(OutOfBoundsError::XOutOfBounds(x, self.width));
         }
@@ -89,7 +106,11 @@ impl TextGrid {
         Ok(())
     }
 
-    pub fn fill_range(&mut self, range: impl RangeBounds<usize>, symbol: Symbol) -> Result<(), OutOfBoundsError> {
+    pub fn fill_range(
+        &mut self,
+        range: impl RangeBounds<usize>,
+        symbol: Symbol,
+    ) -> Result<(), OutOfBoundsError> {
         let start = match range.start_bound() {
             std::ops::Bound::Included(x) => *x,
             std::ops::Bound::Excluded(x) => *x + 1,
@@ -100,15 +121,15 @@ impl TextGrid {
         }
 
         let end = match range.end_bound() {
-            std::ops::Bound::Included(x) => *x +1,
+            std::ops::Bound::Included(x) => *x + 1,
             std::ops::Bound::Excluded(x) => *x,
             std::ops::Bound::Unbounded => self.grid.len(),
         };
-        
+
         if end > self.grid.len() {
             return Err(OutOfBoundsError::IndexOutOfBounds(end, self.grid.len()));
         }
-        
+
         self.grid[start..end].fill(symbol);
 
         Ok(())
@@ -121,52 +142,166 @@ impl TextGrid {
                 self.grid[y * self.width + x] = self.grid[(y + 1) * self.width + x].clone();
             }
         }
-        self.grid[(self.height - 1) * self.width..].fill(Symbol { c: ' ', format: Default::default() });
+        self.grid[(self.height - 1) * self.width..].fill(Symbol {
+            c: ' ',
+            format: Default::default(),
+        });
     }
 
-    pub fn rows(&self) -> Vec<&[Symbol]> {
-        self.grid.chunks(self.width).collect()
+    pub fn rows(&self) -> impl Iterator<Item = &[Symbol]> {
+        self.grid.chunks(self.width)
     }
 
-    pub fn view<
-    'a,
-    Message,
-    Theme,
-    Renderer,
->(&self) -> Element<'a, Message, Theme, Renderer> where 
-        Message: Clone +'a, 
-        Renderer: 'a,
-        Renderer: iced_core::Renderer ,
-        Renderer: iced_core::text::Renderer,
-        Theme: text::Catalog + 'a,
-        Theme: container::Catalog,
-        <Theme as text::Catalog>::Class<'a>: From<iced_core::widget::text::StyleFn<'a, Theme>>,
-        <Theme as iced_widget::container::Catalog>::Class<'a>: From<iced_widget::container::StyleFn<'a, Theme>>,
+    pub fn view<Message, Theme, Renderer>(&self) -> impl Into<Element<Message, Theme, Renderer>>
+    where
+        Renderer: iced::advanced::text::Renderer<Font = iced::Font>,
     {
-        container(
-        column(self.rows().iter().map(|r| {
-            row(r.iter().map(|symbol| {
-                text(symbol.c.to_string())
-                    .color_maybe(symbol.format.foreground)
-                    .width(12)
-                    .center()
-                    .into()
-            }))
-            .into()
-        }))
-    ).style(|_| container::Style {
-        border: Border {
-            radius: Default::default(),
-            width: 2.0,
-            color: Color::from_rgb(0.5, 0.5, 0.5)
-        },
-        ..Default::default()
-    })
-        .into()
+        TextGridDisplay::new(self)
     }
-
 }
 
-struct TextGridDisplay<'a> {
-    grid: &'a TextGrid
+pub struct TextGridDisplay<'a> {
+    grid: &'a TextGrid,
+}
+
+impl<'a> TextGridDisplay<'a> {
+    pub fn new(grid: &'a TextGrid) -> Self {
+        Self { grid }
+    }
+
+    pub fn char_bounds(&self) -> iced::Size<f32> {
+        Size::new(10.0, 20.0)
+    }
+}
+
+impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer> for TextGridDisplay<'a>
+where
+    Renderer: advanced::text::Renderer<Font = Font>,
+    Renderer: advanced::Renderer,
+{
+    fn size(&self) -> Size<Length> {
+        let char_bounds = self.char_bounds();
+        Size {
+            width: Length::Fixed(char_bounds.width * self.grid.width as f32),
+            height: Length::Fixed(char_bounds.height * self.grid.height as f32),
+        }
+    }
+
+    fn layout(
+        &self,
+        tree: &mut iced::advanced::widget::Tree,
+        renderer: &Renderer,
+        limits: &layout::Limits,
+    ) -> layout::Node {
+        let char_bounds = self.char_bounds();
+
+        layout::atomic(limits, char_bounds.width, char_bounds.height)
+
+        // layout::Node::new(Size {
+        //     width: char_bounds.width * self.grid.width as f32,
+        //     height: char_bounds.height * self.grid.height as f32,
+        // })
+
+        // let char_bounds = Renderer::Paragraph::with_text(advanced::Text {
+        //     content: " ",
+        //     bounds: Default::default(),
+        //     size: 20.into(),
+        //     line_height: Default::default(),
+        //     font: Font::MONOSPACE,
+        //     horizontal_alignment: Horizontal::Center,
+        //     vertical_alignment: Vertical::Center,
+        //     shaping: text::Shaping::Basic,
+        //     wrapping: text::Wrapping::None,
+        // })
+        // .min_bounds();
+
+        // println!("min bounds: {:?}", char_bounds);
+
+        // let mut children: Vec<layout::Node> =
+        //     Vec::with_capacity(self.grid.width * self.grid.height);
+        // for y in 0..self.grid.height {
+        //     for x in 0..self.grid.width {
+        //         children.push(
+        //             layout::Node::new(char_bounds)
+        //                 .move_to((char_bounds.width * x as f32, char_bounds.height * y as f32)),
+        //         );
+        //     }
+        // }
+
+        // // Todo
+        // layout::Node::with_children(
+        //     Size {
+        //         width: char_bounds.width * self.grid.width as f32,
+        //         height: char_bounds.height * self.grid.height as f32,
+        //     },
+        //     children,
+        // )
+    }
+
+    fn draw(
+        &self,
+        tree: &iced::advanced::widget::Tree,
+        renderer: &mut Renderer,
+        theme: &Theme,
+        style: &renderer::Style,
+        layout: layout::Layout<'_>,
+        cursor: iced::advanced::mouse::Cursor,
+        viewport: &iced::Rectangle,
+    ) {
+        let char_bounds = self.char_bounds();
+
+        println!("text color: {:?}", style.text_color);
+
+        for (y, row) in self.grid.rows().enumerate() {
+            for (x, symbol) in row.iter().enumerate() {
+                let paragraph = Renderer::Paragraph::with_spans(advanced::Text {
+                    content: &[advanced::text::Span::<'_, (), _>::new(symbol.c.to_string())
+                        .strikethrough(symbol.format.strikethrough)
+                        .underline(symbol.format.underline)
+                        .background_maybe(symbol.format.background.map(Background::Color))
+                        .color_maybe(symbol.format.foreground)
+                        .underline(symbol.format.underline)],
+                    bounds: Default::default(),
+                    size: char_bounds.height.into(),
+                    line_height: Default::default(),
+                    font: Font::MONOSPACE,
+                    horizontal_alignment: Horizontal::Center,
+                    vertical_alignment: Vertical::Center,
+                    shaping: text::Shaping::Basic,
+                    wrapping: text::Wrapping::None,
+                });
+
+                renderer.fill_quad(
+                    Quad {
+                        bounds: Rectangle::new(
+                            Point::new(
+                                x as f32 * char_bounds.width + viewport.x,
+                                y as f32 * char_bounds.height + viewport.y,
+                            ),
+                            char_bounds,
+                        ),
+                        ..Default::default()
+                    },
+                    Background::Color(Color::from_rgb(1.0 * ((x + y) % 2) as f32, 0.0, 0.0)),
+                );
+
+                renderer.fill_paragraph(
+                    &paragraph,
+                    Point::new(x as f32 * char_bounds.width, y as f32 * char_bounds.height),
+                    style.text_color,
+                    *viewport,
+                );
+            }
+        }
+    }
+}
+
+impl<'a, Message, Theme, Renderer> From<TextGridDisplay<'a>>
+    for Element<'a, Message, Theme, Renderer>
+where
+    Renderer: advanced::text::Renderer<Font = Font>,
+{
+    fn from(display: TextGridDisplay<'a>) -> Self {
+        Self::new(display)
+    }
 }

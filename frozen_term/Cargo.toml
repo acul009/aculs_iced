@@ -6,7 +6,5 @@ license = "MIT"
 description = "A terminal emulator to embed into your iced application - includes demo app"
 
 [dependencies]
-iced = { version = "0.13.1", features = ["advanced"] }
-iced_core = "0.13.2"
-iced_widget = { version = "0.13.4", features = ["advanced"] }
+iced = { version = "0.13.1", features = ["advanced", "canvas"] }
 thiserror = "2.0.3"

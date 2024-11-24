@@ -1,13 +1,9 @@
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
-use iced::{
-    widget::{ container,  text},  Color
-};
+use iced::{Color, Element};
 
-use iced::Element;
-
-use super::text_grid::{Format, Symbol, TextGrid};
+use super::text_grid::{Format, Symbol, TextGrid, TextGridDisplay};
 
 pub struct AnsiGrid {
     cursor_x: usize,
@@ -82,81 +78,82 @@ impl AnsiGrid {
         });
 
         while let Some(c) = chars.next() {
-            let result = if self.cursor_x >= self.grid.width() || self.cursor_y >= self.grid.height() {
-                Err(ParserError::CursorOutOfBounds(self.cursor_x, self.cursor_y))
-            } else {
-                match &mut self.state {
-                    ParserState::Write => self.write(c),
-                    ParserState::Escaped => self.escaped(c),
-                    ParserState::Cursor(stack, argument) => match c {
-                        '0'..='9' => {
-                            argument.push(c);
-                            Ok(())
-                        }
-                        ';' => {
-                            stack.push(argument.split_off(0));
-                            Ok(())
-                        }
-                        c => {
-                            if !argument.is_empty() {
-                                stack.push(argument.split_off(0));
+            let result =
+                if self.cursor_x >= self.grid.width() || self.cursor_y >= self.grid.height() {
+                    Err(ParserError::CursorOutOfBounds(self.cursor_x, self.cursor_y))
+                } else {
+                    match &mut self.state {
+                        ParserState::Write => self.write(c),
+                        ParserState::Escaped => self.escaped(c),
+                        ParserState::Cursor(stack, argument) => match c {
+                            '0'..='9' => {
+                                argument.push(c);
+                                Ok(())
                             }
-                            self.cursor(c)
-                        }
-                    },
-                    ParserState::OsMode(stack, argument) => match c {
-                        ';' => {
-                            stack.push(argument.split_off(0));
-                            Ok(())
-                        }
-                        '\x07' => {
-                            stack.push(argument.split_off(0));
+                            ';' => {
+                                stack.push(argument.split_off(0));
+                                Ok(())
+                            }
+                            c => {
+                                if !argument.is_empty() {
+                                    stack.push(argument.split_off(0));
+                                }
+                                self.cursor(c)
+                            }
+                        },
+                        ParserState::OsMode(stack, argument) => match c {
+                            ';' => {
+                                stack.push(argument.split_off(0));
+                                Ok(())
+                            }
+                            '\x07' => {
+                                stack.push(argument.split_off(0));
 
-                            // todo: do something with this sequence
+                                // todo: do something with this sequence
+                                self.state = ParserState::Write;
+                                Ok(())
+                            }
+                            c => {
+                                if !c.is_control() {
+                                    argument.push(c);
+                                    Ok(())
+                                } else {
+                                    Err(ParserError::Todo(c))
+                                }
+                            }
+                        },
+                        ParserState::PrivateMode(num) => match c {
+                            '0'..='9' => {
+                                num.push(c);
+                                Ok(())
+                            }
+                            'h' => {
+                                if num.is_empty() {
+                                    Err(ParserError::InvalidNumberOfArguments('h', 0))
+                                } else {
+                                    // Todo: implement private modes
+                                    self.state = ParserState::Write;
+                                    Ok(())
+                                }
+                            }
+                            'l' => {
+                                if num.is_empty() {
+                                    Err(ParserError::InvalidNumberOfArguments('l', 0))
+                                } else {
+                                    // Todo: implement private modes
+                                    self.state = ParserState::Write;
+                                    Ok(())
+                                }
+                            }
+                            c => Err(ParserError::UnexpectedCharacter(c)),
+                        },
+                        ParserState::SwitchCharacterSet => {
+                            // Todo: actually load and switch character sets
                             self.state = ParserState::Write;
                             Ok(())
                         }
-                        c => {
-                            if !c.is_control() {
-                                argument.push(c);
-                                Ok(())
-                            } else {
-                                Err(ParserError::Todo(c))
-                            }
-                        }
-                    },
-                    ParserState::PrivateMode(num) => match c {
-                        '0'..='9' => {
-                            num.push(c);
-                            Ok(())
-                        }
-                        'h' => {
-                            if num.is_empty() {
-                                Err(ParserError::InvalidNumberOfArguments('h', 0))
-                            } else {
-                                // Todo: implement private modes
-                                self.state = ParserState::Write;
-                                Ok(())
-                            }
-                        }
-                        'l' => {
-                            if num.is_empty() {
-                                Err(ParserError::InvalidNumberOfArguments('l', 0))
-                            } else {
-                                // Todo: implement private modes
-                                self.state = ParserState::Write;
-                                Ok(())
-                            }
-                        }
-                        c => Err(ParserError::UnexpectedCharacter(c)),
-                    },
-                    ParserState::SwitchCharacterSet => {
-                        // Todo: actually load and switch character sets
-                        self.state = ParserState::Write;
-                        Ok(())
                     }
-                }
-            };
+                };
             if let Err(err) = result {
                 let characters_parsed = *self.characters_parsed.lock().unwrap();
                 return Err(ParseTrace {
@@ -191,10 +188,16 @@ impl AnsiGrid {
             }
             _ => {
                 if !c.is_control() {
-                    self.grid.set_symbol(self.cursor_x, self.cursor_y,  Symbol {
-                        c,
-                        format: self.cursor_format.clone(),
-                    }).unwrap();
+                    self.grid
+                        .set_symbol(
+                            self.cursor_x,
+                            self.cursor_y,
+                            Symbol {
+                                c,
+                                format: self.cursor_format.clone(),
+                            },
+                        )
+                        .unwrap();
                     self.cursor_x += 1;
                     self.fix_cursor_bounds();
                 } else {
@@ -345,20 +348,30 @@ impl AnsiGrid {
                 },
                 'J' => match stack.len() {
                     0 => {
-                        self.grid.fill_range(self.cursor_y * self.width() + self.cursor_x.., Symbol {
-                            c: ' ',
-                            format: self.cursor_format.clone(),
-                        }).unwrap();
+                        self.grid
+                            .fill_range(
+                                self.cursor_y * self.width() + self.cursor_x..,
+                                Symbol {
+                                    c: ' ',
+                                    format: self.cursor_format.clone(),
+                                },
+                            )
+                            .unwrap();
                     }
                     _ => return Err(ParserError::InvalidNumberOfArguments(c, stack.len())),
                 },
                 'K' => match stack.len() {
                     0 => {
-                        self.grid.fill_range(self.cursor_y * self.width() + self.cursor_x
-                            ..(self.cursor_y + 1) * self.width() - 1, Symbol {
-                                c: ' ',
-                                format: self.cursor_format.clone(),
-                            }).unwrap();
+                        self.grid
+                            .fill_range(
+                                self.cursor_y * self.width() + self.cursor_x
+                                    ..(self.cursor_y + 1) * self.width() - 1,
+                                Symbol {
+                                    c: ' ',
+                                    format: self.cursor_format.clone(),
+                                },
+                            )
+                            .unwrap();
                     }
                     _ => return Err(ParserError::InvalidNumberOfArguments(c, stack.len())),
                 },
@@ -582,20 +595,9 @@ impl AnsiGrid {
         })
     }
 
-    pub fn view<
-    'a,
-    Message,
-    Theme,
-    Renderer,
->(&self) -> Element<'a, Message, Theme, Renderer> where 
-        Message: Clone +'a, 
-        Renderer: 'a,
-        Renderer: iced_core::Renderer ,
-        Renderer: iced_core::text::Renderer,
-        Theme: text::Catalog + 'a,
-        Theme: container::Catalog,
-        <Theme as text::Catalog>::Class<'a>: From<iced_core::widget::text::StyleFn<'a, Theme>>,
-        <Theme as iced_widget::container::Catalog>::Class<'a>: From<iced_widget::container::StyleFn<'a, Theme>>,
+    pub fn view<Message, Theme, Renderer>(&self) -> impl Into<Element<Message, Theme, Renderer>>
+    where
+        Renderer: iced::advanced::text::Renderer<Font = iced::Font>,
     {
         self.grid.view()
     }
