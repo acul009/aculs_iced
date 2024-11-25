@@ -8,7 +8,9 @@ use iced::{
         widget::Widget,
     },
     alignment::{Horizontal, Vertical},
-    Background, Color, Element, Font, Length, Point, Rectangle, Size,
+    theme,
+    widget::{container, rich_text, span},
+    Background, Border, Color, Element, Font, Length, Point, Rectangle, Shadow, Size,
 };
 use thiserror::Error;
 
@@ -152,11 +154,66 @@ impl TextGrid {
         self.grid.chunks(self.width)
     }
 
-    pub fn view<Message, Theme, Renderer>(&self) -> impl Into<Element<Message, Theme, Renderer>>
+    pub fn view<'a, Message, Theme, Renderer>(
+        &self,
+    ) -> impl Into<Element<'a, Message, Theme, Renderer>>
     where
-        Renderer: iced::advanced::text::Renderer<Font = iced::Font>,
+        Renderer: iced::advanced::text::Renderer<Font = iced::Font> + 'static,
+        Message: Clone + 'static,
+        Theme: iced::widget::text::Catalog + 'static,
+        Theme: iced::widget::container::Catalog,
+        <Theme as iced::widget::container::Catalog>::Class<'a>:
+            From<iced::widget::container::StyleFn<'a, Theme>>,
     {
-        TextGridDisplay::new(self)
+        let mut spans = Vec::with_capacity((self.width + 1) * self.height);
+
+        for row in self.rows() {
+            for symbol in row {
+                let c = match symbol.format.hidden {
+                    true => ' ',
+                    false => symbol.c,
+                };
+
+                let span = span(c)
+                    .background_maybe(symbol.format.background)
+                    .color_maybe(symbol.format.foreground)
+                    .underline(symbol.format.underline)
+                    .strikethrough(symbol.format.strikethrough)
+                    .font(Self::retrieve_font(&symbol.format));
+                spans.push(span);
+            }
+            spans.push(span('\n'));
+        }
+
+        container(rich_text(spans).font(Font::MONOSPACE)).style(|theme| container::Style {
+            text_color: None,
+            background: None,
+            border: Border::default().color(Color::from_rgb(1.0, 1.0, 1.0)),
+            shadow: Shadow::default(),
+        })
+    }
+
+    fn retrieve_font(format: &Format) -> Font {
+        let mut font = Font::MONOSPACE;
+        if format.bold {
+            font.weight = iced::font::Weight::Bold;
+        } else if format.faint {
+            font.weight = iced::font::Weight::Light;
+        }
+
+        if format.italic {
+            font.style = iced::font::Style::Italic;
+        }
+        font
+    }
+
+    pub fn print(&self) {
+        for row in self.rows() {
+            for symbol in row {
+                print!("{}", symbol.c);
+            }
+            println!();
+        }
     }
 }
 

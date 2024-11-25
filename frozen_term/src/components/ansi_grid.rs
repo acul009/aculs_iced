@@ -160,7 +160,9 @@ impl AnsiGrid {
                     error: err,
                     characters_parsed,
                     current_state: self.state.clone(),
-                    around_here: input[characters_parsed - 10..characters_parsed + 20].to_string(),
+                    around_here: input
+                        [characters_parsed.saturating_sub(10)..characters_parsed + 20]
+                        .to_string(),
                 });
             }
         }
@@ -595,10 +597,21 @@ impl AnsiGrid {
         })
     }
 
-    pub fn view<Message, Theme, Renderer>(&self) -> impl Into<Element<Message, Theme, Renderer>>
+    pub fn view<'a, Message, Theme, Renderer>(
+        &self,
+    ) -> impl Into<Element<'a, Message, Theme, Renderer>>
     where
-        Renderer: iced::advanced::text::Renderer<Font = iced::Font>,
+        Renderer: iced::advanced::text::Renderer<Font = iced::Font> + 'static,
+        Message: Clone + 'static,
+        Theme: iced::widget::text::Catalog + 'static,
+        Theme: iced::widget::container::Catalog,
+        <Theme as iced::widget::container::Catalog>::Class<'a>:
+            From<iced::widget::container::StyleFn<'a, Theme>>,
     {
         self.grid.view()
+    }
+
+    pub fn print(&self) {
+        self.grid.print()
     }
 }

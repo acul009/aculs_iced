@@ -1,0 +1,54 @@
+                   .%;888:8898898:
+                 x;XxXB%89b8:b8%b88:
+              .8Xxd                8X:.
+            .8Xx;                    8x:.
+          .tt8x          .d            x88;
+       .@8x8;          .db:              xx@;
+     ,tSXX°          .bbbbbbbbbbbbbbbbbbbB8x@;
+   .SXxx            bBBBBBBBBBBBBBBBBBBBbSBX8;
+ ,888S                                     pd!
+8X88/                                       q
+8X88/
+GBB.
+ x%88        d888@8@X@X@X88X@@XX@@X@8@X.
+   dxXd    dB8b8b8B8B08bB88b998888b88x.
+    dxx8o                      .@@;.
+      dx88                   .t@x.
+        d:SS@8ba89aa67a853Sxxad.
+          .d988999889889899dd.[1G[17A[50Cacul@acul-Battlestation
+[50C-----------------------
+[50COS: Garuda Linux x86_64
+[50CKernel: 6.11.9-zen1-1-zen
+[50CUptime: 6 hours, 29 mins
+[50CPackages: 1582 (pacman)[stable], 11 (flatpak)
+[50CShell: fish 3.7.1
+[50CResolution: 1920x1080 2560x1440
+[50CDE: KDE Plasma 6.2.3
+[50CWM: KWin (Wayland)
+[50CWM Theme: Sweet-Dark-transparent
+[50CTheme: Dr460nized (Sweet) [Qt], Sweet-Dark [GTK2/3/4]
+[50CIcons: BeautyLine [Qt], BeautyLine [GTK2/3/4]
+[50CTerminal: codium
+[50CCPU: AMD Ryzen 7 5800X (16) @ 4.85 GHz
+[50CGPU: NVIDIA GeForce RTX 2080 Ti
+[50CMemory: 14800 MiB / 32017 MiB
+[50C
+[50C[40m   [41m   [42m   [43m   [44m   [45m   [46m   [47m   [m
+[50C[100m   [101m   [102m   [103m   [104m   [105m   [106m   [107m   [m
+[?2004h]633;P;Cwd=/home/acul/VSCode/aculs_iced/frozen_term]633;D]0;~/V/a/frozen_term[30m(B[m[J[K
+…[1;31m[0m[1;2;31mcul[0m in [35mrepo: aculs_iced/frozen_term[0m on [1;35m master[0m [37m[!?][0m is [1;38;5;208m v0.1.0[0m via [1;31m v1.82.0 [0m[K
+ [1;31m╰─λ[0m [K[5Cp[6C[90macman -S sniffnet[30m(B[m[6C[91mp[90macman -S sniffnet[30m(B[m[6C[91mw[30m(B[m[K[7C[90md[30m(B[m[7C[91md[30m(B[m[8C[34mpwd[30m(B[m[8C[8C[8C
+[30m(B[m]633;E;pwd]633;C[?2004l]0;pwd ~/V/a/frozen_term[30m(B[m/home/acul/VSCode/aculs_iced/frozen_term
+]633;D;0[2m⏎(B[m                                                                               ⏎ [K]633;P;Cwd=/home/acul/VSCode/aculs_iced/frozen_term[?2004h]0;~/V/a/frozen_term[30m(B[m[J[K
+…[1;31m[0m[1;2;31mcul[0m in [35mrepo: aculs_iced/frozen_term[0m on [1;35m master[0m [37m[!?][0m is [1;38;5;208m v0.1.0[0m via [1;31m v1.82.0 [0m[K
+ [1;31m╰─λ[0m [K[5Cl[6C[90ms[30m(B[m[6C[91ml[90ms[30m(B[m[6C[91ms[30m(B[m[7C[7C[34mls[30m(B[m[7C[7C
+[30m(B[m]633;E;ls]633;C[?2004l]0;ls ~/V/a/frozen_term[30m(B[m[1;34md[33mr[31mw[32mx[0m[33mr[1;90m-[0m[32mx[33mr[1;90m-[0m[32mx[0m    [1;90m-[0m [1;33macul[0m [34m23 Nov 23:36[0m [1;34msrc[0m
+[1;34md[33mr[31mw[32mx[0m[33mr[1;90m-[0m[32mx[33mr[1;90m-[0m[32mx[0m    [1;90m-[0m [1;33macul[0m [34m23 Nov 23:15[0m [1;34mtarget[0m
+.[1;33mr[31mw[90m-[0m[33mr[1;90m--[0m[33mr[1;90m--[0m    [32m8[0m [1;33macul[0m [34m23 Nov 23:14[0m .gitignore
+.[1;33mr[31mw[90m-[0m[33mr[1;90m--[0m[33mr[1;90m--[0m  [32m154[0m [1;33macul[0m [34m23 Nov 23:15[0m Cargo.lock
+.[1;33mr[31mw[90m-[0m[33mr[1;90m--[0m[33mr[1;90m--[0m  [32m336[0m [1;33macul[0m [34m24 Nov 05:14[0m [1;4;33mCargo.toml[0m
+.[1;33mr[31mw[90m-[0m[33mr[1;90m--[0m[33mr[1;90m--[0m [1;32m2,7k[0m [1;33macul[0m [34m24 Nov 05:23[0m test.txt
+]633;D;0[2m⏎(B[m                                                                               ⏎ [K]633;P;Cwd=/home/acul/VSCode/aculs_iced/frozen_term[?2004h]0;~/V/a/frozen_term[30m(B[m[J[K
+…[1;31m[0m[1;2;31m[0m[35mrepo: aculs_iced/frozen_term[0m on [1;35m master[0m [37m[!?][0m is [1;38;5;208m v0.1.0[0m via [1;31m v1.82.0 [0mtook [1;33m0s[0m[K
+ [1;31m╰─λ[0m [K[5Ce[6C[91me[30m(B[m[6C[90mxit[30m(B[m[6C[91mx[90mit[30m(B[m[7C[34mex[90mit[30m(B[m[7C[34mi[90mt[30m(B[m[8C[91mexi[90mt[30m(B[m[8C[91mt[30m(B[m[9C[34mexit[30m(B[m[9C[9C[9C
+[30m(B[m]633;E;exit]633;C[?2004l]0;exit ~/V/a/frozen_term[30m(B[m]633;D;0[30m(B[m[?2004l
