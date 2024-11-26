@@ -7,6 +7,7 @@ description = "A terminal emulator to embed into your iced application - include
 
 [dependencies]
 iced = { version = "0.13.1", features = ["advanced", "canvas", "tokio"] }
+portable-pty = "0.8.1"
 thiserror = "2.0.3"
 tokio = { version = "1.41.1", features = ["full"] }
 wezterm-term = { git = "https://github.com/wez/wezterm.git" }

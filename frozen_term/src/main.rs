@@ -1,12 +1,11 @@
 pub mod components;
-pub mod widgets;
 mod ui;
+pub mod widgets;
 
 use ui::UI;
 
 fn main() {
-
-    iced::application("fozen term", UI::update, UI::view)
+    iced::application("frozen term", UI::update, UI::view)
         .subscription(UI::subscription)
         .theme(|_| iced::Theme::Dark)
         .antialiasing(true)

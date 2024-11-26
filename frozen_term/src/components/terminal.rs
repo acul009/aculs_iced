@@ -23,16 +23,14 @@ impl TerminalConfiguration for Config {
 }
 
 impl Terminal {
-    pub fn new() -> Self {
+    pub fn new(rows: u16, cols: u16, writer: Box<dyn std::io::Write + Send>) -> Self {
         let size = TerminalSize {
-            rows: 40,
-            cols: 100,
+            rows: rows as usize,
+            cols: cols as usize,
             ..Default::default()
         };
 
         let config = Config {};
-
-        let writer = Box::new(std::io::stdout());
 
         let term =
             wezterm_term::Terminal::new(size, Arc::new(config), "frozen_term", "0.1", writer);
@@ -64,8 +62,6 @@ impl Terminal {
             Vec::with_capacity(self.term.screen().physical_cols * self.term.screen().physical_rows);
 
         screen.for_each_phys_line(|index, line| {
-            println!("linewidth: {}", line.visible_cells().count());
-
             let mut lines_found = 0;
 
             for cell in line.visible_cells() {
@@ -75,7 +71,6 @@ impl Terminal {
                 let span = iced::widget::span(cell.str().to_string())
                     .color(get_color(style.foreground(), &palette, true))
                     .background(get_color(style.background(), &palette, false));
-
                 spans.push(span);
             }
 
@@ -95,12 +90,56 @@ impl Terminal {
         })
     }
 
+    pub fn key_press(&mut self, key: iced::keyboard::Key, modifiers: iced::keyboard::Modifiers) {
+        if let Some((key, modifiers)) = transform_key(key, modifiers) {
+            self.term.key_down(key, modifiers).unwrap();
+        }
+    }
+
     pub fn print(&self) {
         let screen = self.term.screen();
 
         screen.for_each_phys_line(|size, line| {
             println!("{}", line.as_str());
         });
+    }
+}
+
+fn transform_key(
+    key: iced::keyboard::Key,
+    modifiers: iced::keyboard::Modifiers,
+) -> Option<(wezterm_term::KeyCode, wezterm_term::KeyModifiers)> {
+    let wez_key = match key {
+        iced::keyboard::Key::Character(c) => {
+            let c = c.chars().next().unwrap();
+            Some(wezterm_term::KeyCode::Char(c))
+        }
+        iced::keyboard::Key::Named(iced::keyboard::key::Named::Enter) => {
+            Some(wezterm_term::KeyCode::Enter)
+        }
+        _ => None,
+    };
+
+    match wez_key {
+        None => None,
+        Some(key) => {
+            let mut wez_modifiers = wezterm_term::KeyModifiers::empty();
+
+            if modifiers.shift() {
+                wez_modifiers |= wezterm_term::KeyModifiers::SHIFT;
+            }
+            if modifiers.alt() {
+                wez_modifiers |= wezterm_term::KeyModifiers::ALT;
+            }
+            if modifiers.control() {
+                wez_modifiers |= wezterm_term::KeyModifiers::CTRL;
+            }
+            if modifiers.logo() {
+                wez_modifiers |= wezterm_term::KeyModifiers::SUPER;
+            }
+
+            Some((key, wez_modifiers))
+        }
     }
 }
 
