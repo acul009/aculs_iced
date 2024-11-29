@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use iced::{
+    keyboard::key,
     widget::{container, rich_text},
     Border, Element, Length, Shadow,
 };
@@ -56,12 +57,16 @@ impl Terminal {
         let screen = self.term.screen();
         let palette = self.term.palette();
 
+        let lines =
+            screen.lines_in_phys_range(screen.phys_range(&(0..screen.physical_rows as i64)));
+
         let width = screen.physical_cols;
 
         let mut spans =
             Vec::with_capacity(self.term.screen().physical_cols * self.term.screen().physical_rows);
 
-        screen.for_each_phys_line(|index, line| {
+        // screen.for_each_phys_line(|index, line| {
+        for line in lines {
             let mut lines_found = 0;
 
             for cell in line.visible_cells() {
@@ -76,7 +81,8 @@ impl Terminal {
 
             spans.push(iced::widget::span(" ".repeat(width - lines_found)));
             spans.push(iced::widget::span("\n"));
-        });
+        }
+        // });
 
         let (r, g, b, a) = palette.background.to_tuple_rgba();
 
@@ -114,9 +120,16 @@ fn transform_key(
             let c = c.chars().next().unwrap();
             Some(wezterm_term::KeyCode::Char(c))
         }
-        iced::keyboard::Key::Named(iced::keyboard::key::Named::Enter) => {
-            Some(wezterm_term::KeyCode::Enter)
-        }
+        iced::keyboard::Key::Named(named) => match named {
+            key::Named::Enter => Some(wezterm_term::KeyCode::Enter),
+            key::Named::Space => Some(wezterm_term::KeyCode::Char(' ')),
+            key::Named::Backspace => Some(wezterm_term::KeyCode::Backspace),
+            key::Named::ArrowLeft => Some(wezterm_term::KeyCode::LeftArrow),
+            key::Named::ArrowRight => Some(wezterm_term::KeyCode::RightArrow),
+            key::Named::ArrowUp => Some(wezterm_term::KeyCode::UpArrow),
+            key::Named::ArrowDown => Some(wezterm_term::KeyCode::DownArrow),
+            _ => None,
+        },
         _ => None,
     };
 

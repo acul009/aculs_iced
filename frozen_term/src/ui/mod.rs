@@ -45,8 +45,8 @@ impl Drop for UI {
 impl UI {
     pub fn start() -> (Self, Task<Message>) {
         // let grid = AnsiGrid::new(120, 40);
-        let cols = 120;
-        let rows = 40;
+        let cols = 80;
+        let rows = 25;
 
         let command = portable_pty::CommandBuilder::new("fish");
 
