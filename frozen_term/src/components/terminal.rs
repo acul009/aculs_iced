@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use iced::{
     advanced::Widget,
+    border,
     keyboard::key,
     widget::{container, rich_text, text},
     Border, Element, Length, Shadow,
@@ -57,6 +58,7 @@ impl Terminal {
     {
         let mut basic = String::new();
         let screen = self.term.screen();
+        let palette = self.term.palette();
         let lines =
             screen.lines_in_phys_range(screen.phys_range(&(0..screen.physical_rows as i64)));
 
@@ -65,7 +67,20 @@ impl Terminal {
             basic.push('\n');
         }
 
-        return text(basic).font(iced::Font::MONOSPACE);
+        let (r, g, b, a) = palette.background.to_tuple_rgba();
+        let background = iced::Color::from_rgba(r, g, b, a);
+
+        let (r, g, b, a) = palette.foreground.to_tuple_rgba();
+        let foreground = iced::Color::from_rgba(r, g, b, a);
+
+        return container(text(basic).font(iced::Font::MONOSPACE)).style(move |_| {
+            container::Style {
+                text_color: Some(foreground),
+                background: Some(background.into()),
+                border: border::width(0),
+                shadow: Shadow::default(),
+            }
+        });
 
         // let screen = self.term.screen();
         // let palette = self.term.palette();

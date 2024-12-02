@@ -82,7 +82,7 @@ impl UI {
         match message {
             Message::TerminalOutput(output) => {
                 let str = str::from_utf8(&output).unwrap();
-                print!("{}", str);
+                // print!("{}", str);
                 self.term.advance_bytes(output);
                 // self.grid.parse(&output).unwrap();
                 Task::none()
