@@ -6,7 +6,12 @@ license = "MIT"
 description = "A terminal emulator to embed into your iced application - includes demo app"
 
 [dependencies]
-iced = { version = "0.13.1", features = ["advanced", "canvas", "tokio"] }
+iced = { version = "0.13.1", features = [
+    "advanced",
+    "canvas",
+    "tokio",
+    "lazy",
+] }
 portable-pty = "0.8.1"
 thiserror = "2.0.3"
 tokio = { version = "1.41.1", features = ["full"] }

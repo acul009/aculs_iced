@@ -1,15 +1,19 @@
-use std::sync::Arc;
+use std::{
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use iced::{
     advanced::Widget,
     border,
     keyboard::key,
-    widget::{container, rich_text, text},
-    Border, Element, Length, Shadow,
+    theme::palette::{self, Background},
+    widget::{column, container, rich_text, row, text, Column, Row},
+    Border, Element, Length, Shadow, Size,
 };
 use wezterm_term::{
     color::{ColorAttribute, ColorPalette},
-    TerminalConfiguration, TerminalSize,
+    Line, TerminalConfiguration, TerminalSize,
 };
 
 pub struct Terminal {
@@ -46,82 +50,64 @@ impl Terminal {
     }
 
     pub fn view<'a, Message, Theme, Renderer>(
-        &self,
+        &'a self,
     ) -> impl Into<Element<'a, Message, Theme, Renderer>>
     where
         Renderer: iced::advanced::text::Renderer<Font = iced::Font> + 'static,
         Message: Clone + 'static,
         Theme: iced::widget::text::Catalog + 'static,
         Theme: iced::widget::container::Catalog,
-        <Theme as iced::widget::container::Catalog>::Class<'a>:
-            From<iced::widget::container::StyleFn<'a, Theme>>,
+        <Theme as iced::widget::text::Catalog>::Class<'static>:
+            From<iced::widget::text::StyleFn<'static, Theme>>,
+        <Theme as iced::widget::container::Catalog>::Class<'static>:
+            From<iced::widget::container::StyleFn<'static, Theme>>,
     {
-        let mut basic = String::new();
+        // Element::new(TerminalWidget::new(&self))
+        // let mut basic = String::new();
         let screen = self.term.screen();
-        let palette = self.term.palette();
+        let palette = Arc::new(self.term.palette());
         let lines =
             screen.lines_in_phys_range(screen.phys_range(&(0..screen.physical_rows as i64)));
 
+        let mut col = Column::new();
+
         for line in lines {
-            basic.push_str(&line.as_str());
-            basic.push('\n');
+            let row = iced::widget::lazy(LineWrapper(line, palette.clone()), |line_wrapper| {
+                let line = &line_wrapper.0;
+                let palette = &line_wrapper.1;
+
+                let mut row = Row::new();
+
+                for cell in line.visible_cells() {
+                    let foreground = get_color(cell.attrs().foreground(), &palette);
+                    let background = get_color(cell.attrs().background(), &palette);
+
+                    let txt = text(cell.str().to_string())
+                        .color_maybe(foreground)
+                        .font(iced::Font::MONOSPACE);
+
+                    match background {
+                        Some(background) => {
+                            row = row.push(container(txt).style(move |_| container::Style {
+                                text_color: foreground,
+                                background: Some(background.into()),
+                                border: border::width(0),
+                                shadow: Shadow::default(),
+                            }));
+                        }
+                        None => {
+                            row = row.push(txt);
+                        }
+                    }
+                }
+
+                row
+            });
+
+            col = col.push(row);
         }
 
-        let (r, g, b, a) = palette.background.to_tuple_rgba();
-        let background = iced::Color::from_rgba(r, g, b, a);
-
-        let (r, g, b, a) = palette.foreground.to_tuple_rgba();
-        let foreground = iced::Color::from_rgba(r, g, b, a);
-
-        return container(text(basic).font(iced::Font::MONOSPACE)).style(move |_| {
-            container::Style {
-                text_color: Some(foreground),
-                background: Some(background.into()),
-                border: border::width(0),
-                shadow: Shadow::default(),
-            }
-        });
-
-        // let screen = self.term.screen();
-        // let palette = self.term.palette();
-
-        // let lines =
-        //     screen.lines_in_phys_range(screen.phys_range(&(0..screen.physical_rows as i64)));
-
-        // let width = screen.physical_cols;
-
-        // let mut spans =
-        //     Vec::with_capacity(self.term.screen().physical_cols * self.term.screen().physical_rows);
-
-        // // screen.for_each_phys_line(|index, line| {
-        // for line in lines {
-        //     let mut lines_found = 0;
-
-        //     for cell in line.visible_cells() {
-        //         lines_found += 1;
-        //         let style = cell.attrs();
-
-        //         let span = iced::widget::span(cell.str().to_string())
-        //             .color(get_color(style.foreground(), &palette, true))
-        //             .background(get_color(style.background(), &palette, false));
-        //         spans.push(span);
-        //     }
-
-        //     spans.push(iced::widget::span(" ".repeat(width - lines_found)));
-        //     spans.push(iced::widget::span("\n"));
-        // }
-        // // });
-
-        // let (r, g, b, a) = palette.background.to_tuple_rgba();
-
-        // container(rich_text(spans).font(iced::Font::MONOSPACE)).style(move |theme| {
-        //     container::Style {
-        //         text_color: None,
-        //         background: Some(iced::Color::from_rgba(r, g, b, a).into()),
-        //         border: Border::default().color(iced::Color::from_rgb(1.0, 1.0, 1.0)),
-        //         shadow: Shadow::default(),
-        //     }
-        // })
+        return col;
     }
 
     pub fn key_press(&mut self, key: iced::keyboard::Key, modifiers: iced::keyboard::Modifiers) {
@@ -139,6 +125,14 @@ impl Terminal {
     }
 }
 
+struct LineWrapper(Line, Arc<ColorPalette>);
+
+impl Hash for LineWrapper {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.current_seqno().hash(state);
+    }
+}
+
 fn transform_key(
     key: iced::keyboard::Key,
     modifiers: iced::keyboard::Modifiers,
@@ -152,10 +146,25 @@ fn transform_key(
             key::Named::Enter => Some(wezterm_term::KeyCode::Enter),
             key::Named::Space => Some(wezterm_term::KeyCode::Char(' ')),
             key::Named::Backspace => Some(wezterm_term::KeyCode::Backspace),
+            key::Named::Delete => Some(wezterm_term::KeyCode::Delete),
             key::Named::ArrowLeft => Some(wezterm_term::KeyCode::LeftArrow),
             key::Named::ArrowRight => Some(wezterm_term::KeyCode::RightArrow),
             key::Named::ArrowUp => Some(wezterm_term::KeyCode::UpArrow),
             key::Named::ArrowDown => Some(wezterm_term::KeyCode::DownArrow),
+            key::Named::Tab => Some(wezterm_term::KeyCode::Tab),
+            key::Named::Escape => Some(wezterm_term::KeyCode::Escape),
+            key::Named::F1 => Some(wezterm_term::KeyCode::Function(1)),
+            key::Named::F2 => Some(wezterm_term::KeyCode::Function(2)),
+            key::Named::F3 => Some(wezterm_term::KeyCode::Function(3)),
+            key::Named::F4 => Some(wezterm_term::KeyCode::Function(4)),
+            key::Named::F5 => Some(wezterm_term::KeyCode::Function(5)),
+            key::Named::F6 => Some(wezterm_term::KeyCode::Function(6)),
+            key::Named::F7 => Some(wezterm_term::KeyCode::Function(7)),
+            key::Named::F8 => Some(wezterm_term::KeyCode::Function(8)),
+            key::Named::F9 => Some(wezterm_term::KeyCode::Function(9)),
+            key::Named::F10 => Some(wezterm_term::KeyCode::Function(10)),
+            key::Named::F11 => Some(wezterm_term::KeyCode::Function(11)),
+            key::Named::F12 => Some(wezterm_term::KeyCode::Function(12)),
             _ => None,
         },
         _ => None,
@@ -184,64 +193,17 @@ fn transform_key(
     }
 }
 
-fn get_color(color: ColorAttribute, palette: &ColorPalette, foreground: bool) -> iced::Color {
+fn get_color(color: ColorAttribute, palette: &ColorPalette) -> Option<iced::Color> {
     match color {
         ColorAttribute::TrueColorWithPaletteFallback(srgba_tuple, _)
         | ColorAttribute::TrueColorWithDefaultFallback(srgba_tuple) => {
             let (r, g, b, a) = srgba_tuple.to_tuple_rgba();
-            iced::Color::from_rgba(r, g, b, a)
+            Some(iced::Color::from_rgba(r, g, b, a))
         }
         ColorAttribute::PaletteIndex(index) => {
             let (r, g, b, a) = palette.colors.0[index as usize].to_tuple_rgba();
-            iced::Color::from_rgba(r, g, b, a)
+            Some(iced::Color::from_rgba(r, g, b, a))
         }
-        ColorAttribute::Default => {
-            let color = match foreground {
-                true => palette.foreground,
-                false => palette.background,
-            };
-            let (r, g, b, a) = color.to_tuple_rgba();
-            iced::Color::from_rgba(r, g, b, a)
-        }
-    }
-}
-
-pub struct TerminalWidget<'a> {
-    terminal: &'a Terminal,
-}
-
-impl<'a> TerminalWidget<'a> {
-    pub fn new(terminal: &'a Terminal) -> TerminalWidget<'a> {
-        TerminalWidget { terminal }
-    }
-}
-
-impl<'a, Message, Theme, Renderer: iced::advanced::Renderer> Widget<Message, Theme, Renderer>
-    for TerminalWidget<'a>
-{
-    fn size(&self) -> iced::Size<Length> {
-        todo!()
-    }
-
-    fn layout(
-        &self,
-        tree: &mut iced::advanced::widget::Tree,
-        renderer: &Renderer,
-        limits: &iced::advanced::layout::Limits,
-    ) -> iced::advanced::layout::Node {
-        todo!()
-    }
-
-    fn draw(
-        &self,
-        tree: &iced::advanced::widget::Tree,
-        renderer: &mut Renderer,
-        theme: &Theme,
-        style: &iced::advanced::renderer::Style,
-        layout: iced::advanced::Layout<'_>,
-        cursor: iced::advanced::mouse::Cursor,
-        viewport: &iced::Rectangle,
-    ) {
-        todo!()
+        ColorAttribute::Default => None,
     }
 }
