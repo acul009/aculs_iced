@@ -1,6 +1,5 @@
 pub mod components;
 mod ui;
-pub mod widgets;
 
 use ui::UI;
 

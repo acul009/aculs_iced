@@ -4,12 +4,10 @@ use std::{
 };
 
 use iced::{
-    advanced::Widget,
     border,
     keyboard::key,
-    theme::palette::{self, Background},
-    widget::{column, container, rich_text, row, text, Column, Row},
-    Border, Element, Length, Shadow, Size,
+    widget::{container, text, Column, Row},
+    Element, Shadow,
 };
 use wezterm_term::{
     color::{ColorAttribute, ColorPalette},
@@ -119,7 +117,7 @@ impl Terminal {
     pub fn print(&self) {
         let screen = self.term.screen();
 
-        screen.for_each_phys_line(|size, line| {
+        screen.for_each_phys_line(|_, line| {
             println!("{}", line.as_str());
         });
     }

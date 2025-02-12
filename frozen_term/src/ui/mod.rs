@@ -13,7 +13,7 @@ use iced::{
 use portable_pty::{Child, PtyPair, PtySize};
 use tokio::task::{spawn_blocking, JoinHandle};
 
-use crate::components::{ansi_grid::AnsiGrid, terminal::Terminal};
+use crate::components::terminal::Terminal;
 
 /// Messages emitted by the application and its widgets.
 #[derive(Debug, Clone)]
