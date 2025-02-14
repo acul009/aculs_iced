@@ -1,13 +1,21 @@
+use core::f32;
 use std::{
+    cmp::min_by,
     hash::{Hash, Hasher},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use iced::{
+    advanced::{layout::Node, renderer::Quad, Text},
+    alignment::{Horizontal, Vertical},
     border,
     keyboard::key,
-    widget::{container, text, Column, Row},
-    Element, Shadow,
+    widget::{
+        container, responsive,
+        text::{self, LineHeight, Shaping, Wrapping},
+        Column, Row,
+    },
+    Color, Element, Length, Shadow, Size, Vector,
 };
 use wezterm_term::{
     color::{ColorAttribute, ColorPalette},
@@ -15,7 +23,7 @@ use wezterm_term::{
 };
 
 pub struct Terminal {
-    term: wezterm_term::Terminal,
+    term: Mutex<wezterm_term::Terminal>,
 }
 
 #[derive(Debug)]
@@ -40,11 +48,13 @@ impl Terminal {
         let term =
             wezterm_term::Terminal::new(size, Arc::new(config), "frozen_term", "0.1", writer);
 
-        Self { term }
+        Self {
+            term: Mutex::new(term),
+        }
     }
 
     pub fn advance_bytes<B: AsRef<[u8]>>(&mut self, bytes: B) {
-        self.term.advance_bytes(bytes);
+        self.term.lock().unwrap().advance_bytes(bytes);
     }
 
     pub fn view<'a, Message, Theme, Renderer>(
@@ -60,62 +70,74 @@ impl Terminal {
         <Theme as iced::widget::container::Catalog>::Class<'static>:
             From<iced::widget::container::StyleFn<'static, Theme>>,
     {
-        // Element::new(TerminalWidget::new(&self))
-        // let mut basic = String::new();
-        let screen = self.term.screen();
-        let palette = Arc::new(self.term.palette());
-        let lines =
-            screen.lines_in_phys_range(screen.phys_range(&(0..screen.physical_rows as i64)));
+        Element::new(TerminalWidget::new(&self))
+        // responsive(move |size| {
+        //     let cols = size.width / 8.0;
+        //     let rows = size.height / 16.0;
+        //     let mut term = self.term.lock().unwrap();
+        //     term.resize(TerminalSize {
+        //         rows: rows as usize,
+        //         cols: cols as usize,
+        //         pixel_height: size.height as usize,
+        //         pixel_width: size.width as usize,
+        //         ..Default::default()
+        //     });
+        //     let screen = term.screen();
+        //     let palette = Arc::new(term.palette());
+        //     let lines =
+        //         screen.lines_in_phys_range(screen.phys_range(&(0..screen.physical_rows as i64)));
 
-        let mut col = Column::new();
+        //     let mut col = Column::new();
 
-        for line in lines {
-            let row = iced::widget::lazy(LineWrapper(line, palette.clone()), |line_wrapper| {
-                let line = &line_wrapper.0;
-                let palette = &line_wrapper.1;
+        //     for line in lines {
+        //         let row = iced::widget::lazy(LineWrapper(line, palette.clone()), |line_wrapper| {
+        //             let line = &line_wrapper.0;
+        //             let palette = &line_wrapper.1;
 
-                let mut row = Row::new();
+        //             let mut row = Row::new();
 
-                for cell in line.visible_cells() {
-                    let foreground = get_color(cell.attrs().foreground(), &palette);
-                    let background = get_color(cell.attrs().background(), &palette);
+        //             for cell in line.visible_cells() {
+        //                 let foreground = get_color(cell.attrs().foreground(), &palette);
+        //                 let background = get_color(cell.attrs().background(), &palette);
 
-                    let txt = text(cell.str().to_string())
-                        .color_maybe(foreground)
-                        .font(iced::Font::MONOSPACE);
+        //                 let txt = text(cell.str().to_string())
+        //                     .color_maybe(foreground)
+        //                     .font(iced::Font::MONOSPACE);
 
-                    match background {
-                        Some(background) => {
-                            row = row.push(container(txt).style(move |_| container::Style {
-                                text_color: foreground,
-                                background: Some(background.into()),
-                                border: border::width(0),
-                                shadow: Shadow::default(),
-                            }));
-                        }
-                        None => {
-                            row = row.push(txt);
-                        }
-                    }
-                }
+        //                 match background {
+        //                     Some(background) => {
+        //                         row = row.push(container(txt).style(move |_| container::Style {
+        //                             text_color: foreground,
+        //                             background: Some(background.into()),
+        //                             border: border::width(0),
+        //                             shadow: Shadow::default(),
+        //                         }));
+        //                     }
+        //                     None => {
+        //                         row = row.push(txt);
+        //                     }
+        //                 }
+        //             }
 
-                row
-            });
+        //             row
+        //         });
 
-            col = col.push(row);
-        }
+        //         col = col.push(row);
+        //     }
 
-        return col;
+        //     col.into()
+        // })
     }
 
     pub fn key_press(&mut self, key: iced::keyboard::Key, modifiers: iced::keyboard::Modifiers) {
         if let Some((key, modifiers)) = transform_key(key, modifiers) {
-            self.term.key_down(key, modifiers).unwrap();
+            self.term.lock().unwrap().key_down(key, modifiers).unwrap();
         }
     }
 
     pub fn print(&self) {
-        let screen = self.term.screen();
+        let term = self.term.lock().unwrap();
+        let screen = term.screen();
 
         screen.for_each_phys_line(|_, line| {
             println!("{}", line.as_str());
@@ -203,5 +225,73 @@ fn get_color(color: ColorAttribute, palette: &ColorPalette) -> Option<iced::Colo
             Some(iced::Color::from_rgba(r, g, b, a))
         }
         ColorAttribute::Default => None,
+    }
+}
+
+pub struct TerminalWidget<'a> {
+    term: &'a Terminal,
+}
+
+impl<'a> TerminalWidget<'a> {
+    pub fn new(term: &'a Terminal) -> Self {
+        Self { term }
+    }
+}
+
+impl<'a, Message, Theme, Renderer> iced::advanced::widget::Widget<Message, Theme, Renderer>
+    for TerminalWidget<'a>
+where
+    Renderer: iced::advanced::text::Renderer,
+{
+    fn size(&self) -> iced::Size<iced::Length> {
+        Size::new(Length::Fill, Length::Fill)
+    }
+
+    fn layout(
+        &self,
+        tree: &mut iced::advanced::widget::Tree,
+        renderer: &Renderer,
+        limits: &iced::advanced::layout::Limits,
+    ) -> iced::advanced::layout::Node {
+        Node::new(limits.max())
+    }
+
+    fn draw(
+        &self,
+        tree: &iced::advanced::widget::Tree,
+        renderer: &mut Renderer,
+        theme: &Theme,
+        style: &iced::advanced::renderer::Style,
+        layout: iced::advanced::Layout<'_>,
+        cursor: iced::advanced::mouse::Cursor,
+        viewport: &iced::Rectangle,
+    ) {
+        let Some(bounds) = layout.bounds().intersection(viewport) else {
+            return;
+        };
+
+        let text = Text {
+            content: "Test\nTest2\nTest3".to_string(),
+            bounds: bounds.size(),
+            size: renderer.default_size(),
+            line_height: LineHeight::default(),
+            font: renderer.default_font(),
+            horizontal_alignment: Horizontal::Left,
+            vertical_alignment: Vertical::Top,
+            shaping: Shaping::default(),
+            wrapping: Wrapping::default(),
+        };
+
+        let mut text_bounds = bounds;
+        text_bounds.height = min_by(text_bounds.height, 21.0, f32::total_cmp);
+
+        renderer.fill_quad(
+            Quad {
+                bounds: bounds,
+                ..Default::default()
+            },
+            Color::from_rgb(1.0, 0.0, 0.0),
+        );
+        renderer.fill_text(text, bounds.position(), Color::WHITE, bounds);
     }
 }
