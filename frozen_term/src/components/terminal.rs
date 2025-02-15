@@ -11,7 +11,7 @@ use iced::{
         graphics::text::paragraph,
         layout::Node,
         renderer::Quad,
-        text::{paragraph::Plain, Paragraph},
+        text::{paragraph::Plain, Paragraph, Renderer},
         Text,
     },
     alignment::{Horizontal, Vertical},
@@ -245,22 +245,23 @@ impl<'a> TerminalWidget<'a> {
     }
 }
 
-struct TerminalWidgetState<P: Paragraph> {
-    paragraph: P,
-    spans: Vec<iced::advanced::text::Span<'static>>,
+struct TerminalWidgetState<R: Renderer> {
+    paragraph: R::Paragraph,
+    spans: Vec<iced::advanced::text::Span<'static, (), R::Font>>,
 }
 
 impl<'a, Message, Theme, Renderer> iced::advanced::widget::Widget<Message, Theme, Renderer>
     for TerminalWidget<'a>
 where
     Renderer: iced::advanced::text::Renderer,
+    Renderer: 'static,
 {
     fn tag(&self) -> iced::advanced::widget::tree::Tag {
-        iced::advanced::widget::tree::Tag::of::<TerminalWidgetState<Renderer::Paragraph>>()
+        iced::advanced::widget::tree::Tag::of::<TerminalWidgetState<Renderer>>()
     }
 
     fn state(&self) -> iced::advanced::widget::tree::State {
-        iced::advanced::widget::tree::State::new(TerminalWidgetState {
+        iced::advanced::widget::tree::State::new(TerminalWidgetState::<Renderer> {
             paragraph: Renderer::Paragraph::default(),
             spans: Vec::new(),
         })
@@ -276,8 +277,19 @@ where
         renderer: &Renderer,
         limits: &iced::advanced::layout::Limits,
     ) -> iced::advanced::layout::Node {
+        let state = tree.state.downcast_mut::<TerminalWidgetState<Renderer>>();
+
+        let mut counter = 0;
+        while state.spans.len() < 5 {
+            counter += 1;
+            state.spans.push(iced::advanced::text::Span::new(format!(
+                "Span {}\n",
+                counter
+            )));
+        }
+
         let text = Text {
-            content: "Test\nTest2\nTest3",
+            content: state.spans.as_ref(),
             bounds: limits.max(),
             size: renderer.default_size(),
             line_height: LineHeight::default(),
@@ -288,18 +300,7 @@ where
             wrapping: Wrapping::default(),
         };
 
-        let state = tree
-            .state
-            .downcast_mut::<TerminalWidgetState<Renderer::Paragraph>>();
-
-        state.paragraph = Paragraph::with_text(text);
-
-        let counter = 0;
-        while state.spans.len() < 1 {
-            state
-                .spans
-                .push(iced::advanced::text::Span::new(format!("Span {}", counter)));
-        }
+        state.paragraph = Paragraph::with_spans(text);
 
         Node::new(limits.max())
     }
@@ -318,21 +319,7 @@ where
             return;
         };
 
-        let state = tree
-            .state
-            .downcast_ref::<TerminalWidgetState<Renderer::Paragraph>>();
-
-        let text = Text {
-            content: "Test\nTest2\nTest3",
-            bounds: Size::new(100.0, 100.0),
-            size: renderer.default_size(),
-            line_height: LineHeight::default(),
-            font: renderer.default_font(),
-            horizontal_alignment: Horizontal::Left,
-            vertical_alignment: Vertical::Top,
-            shaping: Shaping::default(),
-            wrapping: Wrapping::default(),
-        };
+        let state = tree.state.downcast_ref::<TerminalWidgetState<Renderer>>();
 
         renderer.fill_paragraph(&state.paragraph, bounds.position(), Color::WHITE, bounds);
     }
