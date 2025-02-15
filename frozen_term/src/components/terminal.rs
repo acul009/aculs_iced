@@ -1,12 +1,19 @@
 use core::f32;
 use std::{
     cmp::min_by,
+    fmt::format,
     hash::{Hash, Hasher},
     sync::{Arc, Mutex},
 };
 
 use iced::{
-    advanced::{layout::Node, renderer::Quad, Text},
+    advanced::{
+        graphics::text::paragraph,
+        layout::Node,
+        renderer::Quad,
+        text::{paragraph::Plain, Paragraph},
+        Text,
+    },
     alignment::{Horizontal, Vertical},
     border,
     keyboard::key,
@@ -238,11 +245,27 @@ impl<'a> TerminalWidget<'a> {
     }
 }
 
+struct TerminalWidgetState<P: Paragraph> {
+    paragraph: P,
+    spans: Vec<iced::advanced::text::Span<'static>>,
+}
+
 impl<'a, Message, Theme, Renderer> iced::advanced::widget::Widget<Message, Theme, Renderer>
     for TerminalWidget<'a>
 where
     Renderer: iced::advanced::text::Renderer,
 {
+    fn tag(&self) -> iced::advanced::widget::tree::Tag {
+        iced::advanced::widget::tree::Tag::of::<TerminalWidgetState<Renderer::Paragraph>>()
+    }
+
+    fn state(&self) -> iced::advanced::widget::tree::State {
+        iced::advanced::widget::tree::State::new(TerminalWidgetState {
+            paragraph: Renderer::Paragraph::default(),
+            spans: Vec::new(),
+        })
+    }
+
     fn size(&self) -> iced::Size<iced::Length> {
         Size::new(Length::Fill, Length::Fill)
     }
@@ -253,6 +276,31 @@ where
         renderer: &Renderer,
         limits: &iced::advanced::layout::Limits,
     ) -> iced::advanced::layout::Node {
+        let text = Text {
+            content: "Test\nTest2\nTest3",
+            bounds: limits.max(),
+            size: renderer.default_size(),
+            line_height: LineHeight::default(),
+            font: renderer.default_font(),
+            horizontal_alignment: Horizontal::Left,
+            vertical_alignment: Vertical::Top,
+            shaping: Shaping::default(),
+            wrapping: Wrapping::default(),
+        };
+
+        let state = tree
+            .state
+            .downcast_mut::<TerminalWidgetState<Renderer::Paragraph>>();
+
+        state.paragraph = Paragraph::with_text(text);
+
+        let counter = 0;
+        while state.spans.len() < 1 {
+            state
+                .spans
+                .push(iced::advanced::text::Span::new(format!("Span {}", counter)));
+        }
+
         Node::new(limits.max())
     }
 
@@ -270,9 +318,13 @@ where
             return;
         };
 
+        let state = tree
+            .state
+            .downcast_ref::<TerminalWidgetState<Renderer::Paragraph>>();
+
         let text = Text {
-            content: "Test\nTest2\nTest3".to_string(),
-            bounds: bounds.size(),
+            content: "Test\nTest2\nTest3",
+            bounds: Size::new(100.0, 100.0),
             size: renderer.default_size(),
             line_height: LineHeight::default(),
             font: renderer.default_font(),
@@ -282,16 +334,6 @@ where
             wrapping: Wrapping::default(),
         };
 
-        let mut text_bounds = bounds;
-        text_bounds.height = min_by(text_bounds.height, 21.0, f32::total_cmp);
-
-        renderer.fill_quad(
-            Quad {
-                bounds: bounds,
-                ..Default::default()
-            },
-            Color::from_rgb(1.0, 0.0, 0.0),
-        );
-        renderer.fill_text(text, bounds.position(), Color::WHITE, bounds);
+        renderer.fill_paragraph(&state.paragraph, bounds.position(), Color::WHITE, bounds);
     }
 }
