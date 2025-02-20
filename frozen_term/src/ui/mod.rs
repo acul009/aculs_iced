@@ -1,17 +1,18 @@
 use core::str;
 use std::{
+    env,
     ops::Deref,
     sync::{Arc, Mutex},
 };
 
 use iced::{
+    Element, Subscription, Task,
     futures::SinkExt,
     keyboard::{self, Key, Modifiers},
     stream::channel,
-    Element, Subscription, Task,
 };
 use portable_pty::{Child, PtyPair, PtySize};
-use tokio::task::{spawn_blocking, JoinHandle};
+use tokio::task::{JoinHandle, spawn_blocking};
 
 use crate::components::terminal::Terminal;
 
@@ -43,12 +44,22 @@ impl Drop for UI {
 }
 
 impl UI {
+    #[cfg(unix)]
+    fn get_shell() -> String {
+        env::var("SHELL").unwrap_or("/bin/bash".to_string())
+    }
+
+    #[cfg(windows)]
+    fn get_shell() -> String {
+        "powershell.exe".to_string()
+    }
+
     pub fn start() -> (Self, Task<Message>) {
         // let grid = AnsiGrid::new(120, 40);
         let cols = 80;
         let rows = 25;
 
-        let command = portable_pty::CommandBuilder::new("fish");
+        let command = portable_pty::CommandBuilder::new(Self::get_shell());
 
         let pty = portable_pty::native_pty_system()
             .openpty(PtySize {

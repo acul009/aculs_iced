@@ -7,30 +7,29 @@ use std::{
 };
 
 use iced::{
+    Color, Element, Length, Shadow, Size, Vector,
     advanced::{
+        Text,
         graphics::text::paragraph,
         layout::Node,
         renderer::Quad,
-        text::{paragraph::Plain, Paragraph, Renderer},
-        Text,
+        text::{Paragraph, Renderer, paragraph::Plain},
     },
     alignment::{Horizontal, Vertical},
     border,
     keyboard::key,
     widget::{
-        container, responsive,
+        Column, Row, container, responsive,
         text::{self, LineHeight, Shaping, Wrapping},
-        Column, Row,
     },
-    Color, Element, Length, Shadow, Size, Vector,
 };
 use wezterm_term::{
+    CellAttributes, Line, TerminalConfiguration, TerminalSize,
     color::{ColorAttribute, ColorPalette},
-    Line, TerminalConfiguration, TerminalSize,
 };
 
 pub struct Terminal {
-    term: Mutex<wezterm_term::Terminal>,
+    term: wezterm_term::Terminal,
 }
 
 #[derive(Debug)]
@@ -55,13 +54,11 @@ impl Terminal {
         let term =
             wezterm_term::Terminal::new(size, Arc::new(config), "frozen_term", "0.1", writer);
 
-        Self {
-            term: Mutex::new(term),
-        }
+        Self { term }
     }
 
     pub fn advance_bytes<B: AsRef<[u8]>>(&mut self, bytes: B) {
-        self.term.lock().unwrap().advance_bytes(bytes);
+        self.term.advance_bytes(bytes);
     }
 
     pub fn view<'a, Message, Theme, Renderer>(
@@ -77,7 +74,7 @@ impl Terminal {
         <Theme as iced::widget::container::Catalog>::Class<'static>:
             From<iced::widget::container::StyleFn<'static, Theme>>,
     {
-        Element::new(TerminalWidget::new(&self))
+        Element::new(TerminalWidget::new(self, iced::Font::MONOSPACE))
         // responsive(move |size| {
         //     let cols = size.width / 8.0;
         //     let rows = size.height / 16.0;
@@ -138,12 +135,12 @@ impl Terminal {
 
     pub fn key_press(&mut self, key: iced::keyboard::Key, modifiers: iced::keyboard::Modifiers) {
         if let Some((key, modifiers)) = transform_key(key, modifiers) {
-            self.term.lock().unwrap().key_down(key, modifiers).unwrap();
+            self.term.key_down(key, modifiers).unwrap();
         }
     }
 
-    pub fn print(&self) {
-        let term = self.term.lock().unwrap();
+    pub fn print(&mut self) {
+        let term = &self.term;
         let screen = term.screen();
 
         screen.for_each_phys_line(|_, line| {
@@ -235,23 +232,32 @@ fn get_color(color: ColorAttribute, palette: &ColorPalette) -> Option<iced::Colo
     }
 }
 
-pub struct TerminalWidget<'a> {
+pub struct TerminalWidget<'a, R: iced::advanced::text::Renderer> {
     term: &'a Terminal,
+    font: R::Font,
 }
 
-impl<'a> TerminalWidget<'a> {
-    pub fn new(term: &'a Terminal) -> Self {
-        Self { term }
+impl<'a, R> TerminalWidget<'a, R>
+where
+    R: iced::advanced::text::Renderer,
+{
+    pub fn new(term: &'a Terminal, font: impl Into<R::Font>) -> Self {
+        Self {
+            term,
+            font: font.into(),
+        }
     }
 }
 
 struct TerminalWidgetState<R: Renderer> {
     paragraph: R::Paragraph,
     spans: Vec<iced::advanced::text::Span<'static, (), R::Font>>,
+    line_count: usize,
+    counter: u32,
 }
 
-impl<'a, Message, Theme, Renderer> iced::advanced::widget::Widget<Message, Theme, Renderer>
-    for TerminalWidget<'a>
+impl<Message, Theme, Renderer> iced::advanced::widget::Widget<Message, Theme, Renderer>
+    for TerminalWidget<'_, Renderer>
 where
     Renderer: iced::advanced::text::Renderer,
     Renderer: 'static,
@@ -264,6 +270,8 @@ where
         iced::advanced::widget::tree::State::new(TerminalWidgetState::<Renderer> {
             paragraph: Renderer::Paragraph::default(),
             spans: Vec::new(),
+            line_count: 0,
+            counter: 0,
         })
     }
 
@@ -279,14 +287,60 @@ where
     ) -> iced::advanced::layout::Node {
         let state = tree.state.downcast_mut::<TerminalWidgetState<Renderer>>();
 
-        let mut counter = 0;
-        while state.spans.len() < 5 {
-            counter += 1;
-            state.spans.push(iced::advanced::text::Span::new(format!(
-                "Span {}\n",
-                counter
-            )));
+        let term = &self.term.term;
+        let screen = term.screen();
+        state.line_count = screen.physical_rows;
+        let term_lines = screen.lines_in_phys_range(0..state.line_count);
+
+        let mut current_text = String::new();
+        let mut current_attrs = CellAttributes::default();
+        state.spans.clear();
+
+        let palette = term.palette();
+
+        for line in term_lines {
+            for cell in line.visible_cells() {
+                if cell.attrs() != &current_attrs {
+                    let foreground = get_color(current_attrs.foreground(), &palette);
+                    let background = get_color(current_attrs.background(), &palette);
+
+                    let span = iced::advanced::text::Span::new(current_text.clone())
+                        .font(self.font)
+                        .color_maybe(foreground)
+                        .background_maybe(background);
+
+                    state.spans.push(span);
+
+                    current_text.clear();
+                    current_attrs = cell.attrs().clone();
+                }
+
+                current_text.push_str(cell.str());
+            }
+            current_text.push('\n');
         }
+
+        if current_text.len() > 0 {
+            let foreground = get_color(current_attrs.foreground(), &palette);
+            let background = get_color(current_attrs.background(), &palette);
+
+            let span = iced::advanced::text::Span::new(current_text)
+                .font(self.font)
+                .color_maybe(foreground)
+                .background_maybe(background);
+
+            state.spans.push(span);
+        }
+
+        // for (index, line) in term_lines.iter().enumerate() {
+        //     let span = iced::advanced::text::Span::new(line.as_str());
+
+        //     if let Some(lines) = state.spans.get_mut(index) {
+        //         *lines = span;
+        //     } else {
+        //         state.spans.push(span);
+        //     }
+        // }
 
         let text = Text {
             content: state.spans.as_ref(),
