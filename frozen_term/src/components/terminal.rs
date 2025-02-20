@@ -252,8 +252,6 @@ where
 struct TerminalWidgetState<R: Renderer> {
     paragraph: R::Paragraph,
     spans: Vec<iced::advanced::text::Span<'static, (), R::Font>>,
-    line_count: usize,
-    counter: u32,
 }
 
 impl<Message, Theme, Renderer> iced::advanced::widget::Widget<Message, Theme, Renderer>
@@ -289,8 +287,9 @@ where
 
         let term = &self.term.term;
         let screen = term.screen();
-        state.line_count = screen.physical_rows;
-        let term_lines = screen.lines_in_phys_range(0..state.line_count);
+        let line_count = screen.physical_rows as i64;
+        let range = screen.phys_range(&(0..line_count));
+        let term_lines = screen.lines_in_phys_range(range);
 
         let mut current_text = String::new();
         let mut current_attrs = CellAttributes::default();
@@ -305,11 +304,11 @@ where
                         let foreground = get_color(current_attrs.foreground(), &palette);
                         let background = get_color(current_attrs.background(), &palette);
 
+                        println!("{:?} {:?} - {}", &foreground, &background, &current_text);
+
                         let span = iced::advanced::text::Span::new(current_text.clone())
                             .color_maybe(foreground)
                             .background_maybe(background);
-
-                        println!("span: {}", current_text);
 
                         state.spans.push(span);
                         current_text.clear();
@@ -327,7 +326,6 @@ where
             let background = get_color(current_attrs.background(), &palette);
 
             let span = iced::advanced::text::Span::new(current_text)
-                .font(self.font)
                 .color_maybe(foreground)
                 .background_maybe(background);
 
@@ -352,7 +350,7 @@ where
             font: self.font,
             horizontal_alignment: Horizontal::Left,
             vertical_alignment: Vertical::Top,
-            shaping: Shaping::Basic,
+            shaping: Shaping::Advanced,
             wrapping: Wrapping::None,
         };
 
