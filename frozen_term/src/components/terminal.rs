@@ -301,17 +301,19 @@ where
         for line in term_lines {
             for cell in line.visible_cells() {
                 if cell.attrs() != &current_attrs {
-                    let foreground = get_color(current_attrs.foreground(), &palette);
-                    let background = get_color(current_attrs.background(), &palette);
+                    if !current_text.is_empty() {
+                        let foreground = get_color(current_attrs.foreground(), &palette);
+                        let background = get_color(current_attrs.background(), &palette);
 
-                    let span = iced::advanced::text::Span::new(current_text.clone())
-                        .font(self.font)
-                        .color_maybe(foreground)
-                        .background_maybe(background);
+                        let span = iced::advanced::text::Span::new(current_text.clone())
+                            .color_maybe(foreground)
+                            .background_maybe(background);
 
-                    state.spans.push(span);
+                        println!("span: {}", current_text);
 
-                    current_text.clear();
+                        state.spans.push(span);
+                        current_text.clear();
+                    }
                     current_attrs = cell.attrs().clone();
                 }
 
@@ -320,7 +322,7 @@ where
             current_text.push('\n');
         }
 
-        if current_text.len() > 0 {
+        if current_text.len() > 1 {
             let foreground = get_color(current_attrs.foreground(), &palette);
             let background = get_color(current_attrs.background(), &palette);
 
@@ -347,11 +349,11 @@ where
             bounds: limits.max(),
             size: renderer.default_size(),
             line_height: LineHeight::default(),
-            font: renderer.default_font(),
+            font: self.font,
             horizontal_alignment: Horizontal::Left,
             vertical_alignment: Vertical::Top,
-            shaping: Shaping::default(),
-            wrapping: Wrapping::default(),
+            shaping: Shaping::Basic,
+            wrapping: Wrapping::None,
         };
 
         state.paragraph = Paragraph::with_spans(text);
