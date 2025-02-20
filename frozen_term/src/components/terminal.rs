@@ -268,8 +268,6 @@ where
         iced::advanced::widget::tree::State::new(TerminalWidgetState::<Renderer> {
             paragraph: Renderer::Paragraph::default(),
             spans: Vec::new(),
-            line_count: 0,
-            counter: 0,
         })
     }
 
