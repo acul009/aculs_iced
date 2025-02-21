@@ -9,8 +9,8 @@ use std::{
 use iced::{
     Color, Element, Length, Shadow, Size, Vector,
     advanced::{
-        Text,
-        graphics::text::paragraph,
+        Shell, Text,
+        graphics::{core::widget, text::paragraph},
         layout::Node,
         renderer::Quad,
         text::{Paragraph, Renderer, paragraph::Plain},
@@ -24,12 +24,15 @@ use iced::{
     },
 };
 use wezterm_term::{
-    CellAttributes, Line, TerminalConfiguration, TerminalSize,
+    CellAttributes, Line, TerminalConfiguration,
     color::{ColorAttribute, ColorPalette},
 };
 
-pub struct Terminal {
+pub use wezterm_term::TerminalSize;
+
+pub struct Terminal<Message> {
     term: wezterm_term::Terminal,
+    on_resize: Box<dyn Fn(TerminalSize) -> Message>,
 }
 
 #[derive(Debug)]
@@ -41,8 +44,13 @@ impl TerminalConfiguration for Config {
     }
 }
 
-impl Terminal {
-    pub fn new(rows: u16, cols: u16, writer: Box<dyn std::io::Write + Send>) -> Self {
+impl<Message> Terminal<Message> {
+    pub fn new(
+        rows: u16,
+        cols: u16,
+        writer: Box<dyn std::io::Write + Send>,
+        on_resize: impl Fn(TerminalSize) -> Message + 'static,
+    ) -> Self {
         let size = TerminalSize {
             rows: rows as usize,
             cols: cols as usize,
@@ -54,16 +62,27 @@ impl Terminal {
         let term =
             wezterm_term::Terminal::new(size, Arc::new(config), "frozen_term", "0.1", writer);
 
-        Self { term }
+        Self {
+            term,
+            on_resize: Box::new(on_resize),
+        }
     }
 
     pub fn advance_bytes<B: AsRef<[u8]>>(&mut self, bytes: B) {
         self.term.advance_bytes(bytes);
     }
 
-    pub fn view<'a, Message, Theme, Renderer>(
-        &'a self,
-    ) -> impl Into<Element<'a, Message, Theme, Renderer>>
+    pub fn key_press(&mut self, key: iced::keyboard::Key, modifiers: iced::keyboard::Modifiers) {
+        if let Some((key, modifiers)) = transform_key(key, modifiers) {
+            self.term.key_down(key, modifiers).unwrap();
+        }
+    }
+
+    pub fn resize(&mut self, size: TerminalSize) {
+        self.term.resize(size)
+    }
+
+    pub fn view<'a, Theme, Renderer>(&'a self) -> impl Into<Element<'a, Message, Theme, Renderer>>
     where
         Renderer: iced::advanced::text::Renderer<Font = iced::Font> + 'static,
         Message: Clone + 'static,
@@ -133,12 +152,6 @@ impl Terminal {
         // })
     }
 
-    pub fn key_press(&mut self, key: iced::keyboard::Key, modifiers: iced::keyboard::Modifiers) {
-        if let Some((key, modifiers)) = transform_key(key, modifiers) {
-            self.term.key_down(key, modifiers).unwrap();
-        }
-    }
-
     pub fn print(&mut self) {
         let term = &self.term;
         let screen = term.screen();
@@ -146,14 +159,6 @@ impl Terminal {
         screen.for_each_phys_line(|_, line| {
             println!("{}", line.as_str());
         });
-    }
-}
-
-struct LineWrapper(Line, Arc<ColorPalette>);
-
-impl Hash for LineWrapper {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.current_seqno().hash(state);
     }
 }
 
@@ -232,16 +237,16 @@ fn get_color(color: ColorAttribute, palette: &ColorPalette) -> Option<iced::Colo
     }
 }
 
-pub struct TerminalWidget<'a, R: iced::advanced::text::Renderer> {
-    term: &'a Terminal,
+pub struct TerminalWidget<'a, R: iced::advanced::text::Renderer, Message> {
+    term: &'a Terminal<Message>,
     font: R::Font,
 }
 
-impl<'a, R> TerminalWidget<'a, R>
+impl<'a, R, Message> TerminalWidget<'a, R, Message>
 where
     R: iced::advanced::text::Renderer,
 {
-    pub fn new(term: &'a Terminal, font: impl Into<R::Font>) -> Self {
+    pub fn new(term: &'a Terminal<Message>, font: impl Into<R::Font>) -> Self {
         Self {
             term,
             font: font.into(),
@@ -255,7 +260,7 @@ struct TerminalWidgetState<R: Renderer> {
 }
 
 impl<Message, Theme, Renderer> iced::advanced::widget::Widget<Message, Theme, Renderer>
-    for TerminalWidget<'_, Renderer>
+    for TerminalWidget<'_, Renderer, Message>
 where
     Renderer: iced::advanced::text::Renderer,
     Renderer: 'static,
@@ -282,11 +287,10 @@ where
         limits: &iced::advanced::layout::Limits,
     ) -> iced::advanced::layout::Node {
         let state = tree.state.downcast_mut::<TerminalWidgetState<Renderer>>();
-
         let term = &self.term.term;
         let screen = term.screen();
-        let line_count = screen.physical_rows as i64;
-        let range = screen.phys_range(&(0..line_count));
+
+        let range = screen.phys_range(&(0..screen.physical_rows as i64));
         let term_lines = screen.lines_in_phys_range(range);
 
         let mut current_text = String::new();
@@ -301,8 +305,6 @@ where
                     if !current_text.is_empty() {
                         let foreground = get_color(current_attrs.foreground(), &palette);
                         let background = get_color(current_attrs.background(), &palette);
-
-                        println!("{:?} {:?} - {}", &foreground, &background, &current_text);
 
                         let span = iced::advanced::text::Span::new(current_text.clone())
                             .color_maybe(foreground)
@@ -355,6 +357,48 @@ where
         state.paragraph = Paragraph::with_spans(text);
 
         Node::new(limits.max())
+    }
+
+    fn on_event(
+        &mut self,
+        _tree: &mut iced::advanced::widget::Tree,
+        event: iced::Event,
+        layout: iced::advanced::Layout<'_>,
+        _cursor: iced::advanced::mouse::Cursor,
+        renderer: &Renderer,
+        _clipboard: &mut dyn iced::advanced::Clipboard,
+        shell: &mut Shell<'_, Message>,
+        _viewport: &iced::Rectangle,
+    ) -> iced::advanced::graphics::core::event::Status {
+        if let iced::Event::Window(iced::window::Event::RedrawRequested(_event)) = event {
+            let term = &self.term.term;
+            let screen = term.screen();
+
+            let widget_width = layout.bounds().width;
+            let widget_height = layout.bounds().height;
+            let line_height = renderer.default_size().0;
+            let char_width = line_height * 0.6;
+
+            let target_line_count = (0.78 * widget_height / line_height) as usize;
+            let target_col_count = (widget_width / char_width) as usize;
+
+            if screen.physical_rows != target_line_count || screen.physical_cols != target_col_count
+            {
+                let size = TerminalSize {
+                    rows: target_line_count,
+                    cols: target_col_count,
+                    pixel_height: widget_height as usize,
+                    pixel_width: widget_width as usize,
+                    ..Default::default()
+                };
+                let message = (self.term.on_resize)(size);
+                shell.publish(message);
+            }
+
+            return iced::advanced::graphics::core::event::Status::Captured;
+        }
+
+        iced::advanced::graphics::core::event::Status::Ignored
     }
 
     fn draw(

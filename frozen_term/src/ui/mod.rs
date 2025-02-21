@@ -21,11 +21,12 @@ use crate::components::terminal::Terminal;
 pub enum Message {
     TerminalOutput(Vec<u8>),
     KeyPress(Key, Modifiers),
+    Resize(crate::components::terminal::TerminalSize),
     Noop,
 }
 
 pub struct UI {
-    term: Terminal,
+    term: Terminal<Message>,
     term_cols: u16,
     term_rows: u16,
     child: Box<dyn Child + Send + Sync>,
@@ -73,7 +74,7 @@ impl UI {
 
         let writer = pty.master.take_writer().unwrap();
 
-        let term = Terminal::new(rows, cols, writer);
+        let term = Terminal::new(rows, cols, writer, Message::Resize);
 
         (
             Self {
@@ -109,6 +110,17 @@ impl UI {
 
                 //     Message::Noop
                 // })
+                Task::none()
+            }
+            Message::Resize(size) => {
+                self.term.resize(size);
+                let pty_size = PtySize {
+                    rows: size.rows as u16,
+                    cols: size.cols as u16,
+                    pixel_height: size.pixel_height as u16,
+                    pixel_width: size.pixel_width as u16,
+                };
+                self.pty.master.resize(pty_size).unwrap();
                 Task::none()
             }
             Message::Noop => Task::none(),
