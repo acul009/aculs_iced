@@ -7,7 +7,7 @@ use std::{
 };
 
 use iced::{
-    Color, Element, Length, Shadow, Size, Vector,
+    Color, Element, Length, Point, Rectangle, Shadow, Size, Vector,
     advanced::{
         Shell, Text,
         graphics::{core::widget, text::paragraph},
@@ -416,6 +416,30 @@ where
         };
 
         let state = tree.state.downcast_ref::<TerminalWidgetState<Renderer>>();
+
+        for (index, span) in state.spans.iter().enumerate() {
+            if let Some(highlight) = span.highlight {
+                let translation = layout.position() - Point::ORIGIN;
+                let regions = state.paragraph.span_bounds(index);
+
+                for bounds in &regions {
+                    let bounds = Rectangle::new(
+                        bounds.position() - Vector::new(span.padding.left, span.padding.top),
+                        bounds.size()
+                            + Size::new(span.padding.horizontal(), span.padding.vertical()),
+                    );
+
+                    renderer.fill_quad(
+                        Quad {
+                            bounds: bounds + translation,
+                            border: highlight.border,
+                            ..Default::default()
+                        },
+                        highlight.background,
+                    );
+                }
+            }
+        }
 
         renderer.fill_paragraph(&state.paragraph, bounds.position(), Color::WHITE, bounds);
     }
