@@ -1,5 +1,4 @@
 use std::{
-    fs::ReadDir,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -15,14 +14,10 @@ use iced::{
     },
     alignment::{Horizontal, Vertical},
     keyboard,
-    widget::{
-        text::{LineHeight, Shaping, Wrapping},
-        text_input::cursor,
-    },
+    widget::text::{LineHeight, Shaping, Wrapping},
     window::RedrawRequest,
 };
 use termwiz::surface::{CursorShape, CursorVisibility};
-use tokio::time::Interval;
 use wezterm_term::{
     CellAttributes, CursorPosition, TerminalConfiguration,
     color::{ColorAttribute, ColorPalette},
@@ -367,8 +362,8 @@ where
 
             state.cursor = term.cursor_pos();
 
-            for (line_num, line) in term_lines.iter().enumerate() {
-                for (cell_num, cell) in line.visible_cells().enumerate() {
+            for line in term_lines.iter() {
+                for cell in line.visible_cells() {
                     if cell.attrs() != &current_attrs {
                         if !current_text.is_empty() {
                             let foreground = get_color(current_attrs.foreground(), &palette);
