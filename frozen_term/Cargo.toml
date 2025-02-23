@@ -10,3 +10,4 @@ iced = { version = "0.13.1", features = ["advanced", "tokio"] }
 thiserror = "2.0.3"
 tokio = { version = "1.41.1", features = ["full"] }
 wezterm-term = { git = "https://github.com/wez/wezterm.git" }
+termwiz = { git = "https://github.com/wez/wezterm.git" }

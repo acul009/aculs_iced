@@ -1,7 +1,11 @@
-use std::sync::Arc;
+use std::{
+    fs::ReadDir,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use iced::{
-    Color, Element, Length, Point, Rectangle, Size, Task, Vector,
+    Border, Color, Element, Length, Point, Rectangle, Size, Task, Vector,
     advanced::{
         Shell, Text,
         layout::Node,
@@ -11,10 +15,16 @@ use iced::{
     },
     alignment::{Horizontal, Vertical},
     keyboard,
-    widget::text::{LineHeight, Shaping, Wrapping},
+    widget::{
+        text::{LineHeight, Shaping, Wrapping},
+        text_input::cursor,
+    },
+    window::RedrawRequest,
 };
+use termwiz::surface::{CursorShape, CursorVisibility};
+use tokio::time::Interval;
 use wezterm_term::{
-    CellAttributes, TerminalConfiguration,
+    CellAttributes, CursorPosition, TerminalConfiguration,
     color::{ColorAttribute, ColorPalette},
 };
 
@@ -270,7 +280,13 @@ struct State<R: Renderer> {
     paragraph: R::Paragraph,
     spans: Vec<iced::advanced::text::Span<'static, (), R::Font>>,
     last_render_seqno: usize,
+    cursor: CursorPosition,
+    last_cursor_blink: Instant,
+    now: Instant,
 }
+
+const CHAR_WIDTH: f32 = 0.6;
+const CURSOR_BLINK_INTERVAL_MILLIS: u128 = 500;
 
 impl<Renderer> Focusable for State<Renderer>
 where
@@ -305,6 +321,9 @@ where
             paragraph: Renderer::Paragraph::default(),
             spans: Vec::new(),
             last_render_seqno: 0,
+            cursor: CursorPosition::default(),
+            last_cursor_blink: Instant::now(),
+            now: Instant::now(),
         })
     }
 
@@ -346,8 +365,10 @@ where
 
             let palette = term.palette();
 
-            for line in term_lines {
-                for cell in line.visible_cells() {
+            state.cursor = term.cursor_pos();
+
+            for (line_num, line) in term_lines.iter().enumerate() {
+                for (cell_num, cell) in line.visible_cells().enumerate() {
                     if cell.attrs() != &current_attrs {
                         if !current_text.is_empty() {
                             let foreground = get_color(current_attrs.foreground(), &palette);
@@ -409,14 +430,14 @@ where
         _viewport: &iced::Rectangle,
     ) -> iced::advanced::graphics::core::event::Status {
         match event {
-            iced::Event::Window(iced::window::Event::RedrawRequested(_event)) => {
+            iced::Event::Window(iced::window::Event::RedrawRequested(now)) => {
                 let term = &self.term.term;
                 let screen = term.screen();
 
                 let widget_width = layout.bounds().width;
                 let widget_height = layout.bounds().height;
                 let line_height = renderer.default_size().0;
-                let char_width = line_height * 0.6;
+                let char_width = line_height * CHAR_WIDTH;
 
                 let target_line_count = (0.77 * widget_height / line_height) as usize;
                 let target_col_count = (widget_width / char_width) as usize;
@@ -434,7 +455,20 @@ where
                     shell.publish(Message::Resize(size));
                 }
 
-                iced::advanced::graphics::core::event::Status::Captured
+                // handle blinking cursor
+                let state = tree.state.downcast_mut::<State<Renderer>>();
+                if state.focused {
+                    state.now = now;
+                    let millis_until_redraw = CURSOR_BLINK_INTERVAL_MILLIS
+                        - (now - state.last_cursor_blink).as_millis()
+                            % CURSOR_BLINK_INTERVAL_MILLIS;
+
+                    shell.request_redraw(RedrawRequest::At(
+                        now + Duration::from_millis(millis_until_redraw as u64),
+                    ));
+                }
+
+                iced::advanced::graphics::core::event::Status::Ignored
             }
             iced::Event::Mouse(iced::mouse::Event::ButtonPressed(_))
             | iced::Event::Touch(iced::touch::Event::FingerPressed { .. }) => {
@@ -482,10 +516,10 @@ where
         };
 
         let state = tree.state.downcast_ref::<State<Renderer>>();
+        let translation = layout.position() - Point::ORIGIN;
 
         for (index, span) in state.spans.iter().enumerate() {
             if let Some(highlight) = span.highlight {
-                let translation = layout.position() - Point::ORIGIN;
                 let regions = state.paragraph.span_bounds(index);
 
                 for bounds in &regions {
@@ -508,5 +542,61 @@ where
         }
 
         renderer.fill_paragraph(&state.paragraph, bounds.position(), Color::WHITE, bounds);
+
+        draw_cursor(renderer, &state, translation);
     }
+}
+
+fn draw_cursor<Renderer>(
+    renderer: &mut Renderer,
+    state: &State<Renderer>,
+    translation: iced::Vector,
+) where
+    Renderer: iced::advanced::text::Renderer,
+{
+    let is_cursor_visible = state.cursor.visibility == CursorVisibility::Visible
+        && ((state.now - state.last_cursor_blink).as_millis() / CURSOR_BLINK_INTERVAL_MILLIS) % 2
+            == 0;
+
+    if !is_cursor_visible {
+        return;
+    }
+
+    let base_cursor_position = Point::new(
+        state.cursor.x as f32 * renderer.default_size().0 * CHAR_WIDTH,
+        state.cursor.y as f32 * renderer.default_size().0 * 1.3,
+    );
+
+    let padding = 1.0;
+
+    let cursor_bounds = match state.cursor.shape {
+        CursorShape::BlinkingUnderline | CursorShape::SteadyUnderline | CursorShape::Default => {
+            Rectangle::new(
+                base_cursor_position
+                    + translation
+                    + Vector::new(0.0, renderer.default_size().0 * 1.2),
+                Size::new(renderer.default_size().0 * CHAR_WIDTH, 1.0),
+            )
+        }
+        CursorShape::BlinkingBlock | CursorShape::SteadyBlock => Rectangle::new(
+            base_cursor_position + translation + Vector::new(padding, padding),
+            Size::new(
+                renderer.default_size().0 * CHAR_WIDTH - padding,
+                renderer.default_size().0 * 1.3 - padding,
+            ),
+        ),
+        CursorShape::BlinkingBar | CursorShape::SteadyBar => Rectangle::new(
+            base_cursor_position + translation + Vector::new(padding, padding),
+            Size::new(1.0, renderer.default_size().0 * 1.3 - padding),
+        ),
+    };
+
+    renderer.fill_quad(
+        Quad {
+            bounds: cursor_bounds,
+            border: Border::default(),
+            ..Default::default()
+        },
+        Color::WHITE,
+    );
 }
