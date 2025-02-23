@@ -10,7 +10,7 @@ use iced::{
         widget::operation::Focusable,
     },
     alignment::{Horizontal, Vertical},
-    keyboard::key,
+    keyboard,
     widget::text::{LineHeight, Shaping, Wrapping},
 };
 use wezterm_term::{
@@ -23,10 +23,15 @@ pub use wezterm_term::TerminalSize;
 #[derive(Debug, Clone)]
 pub enum Message {
     Resize(TerminalSize),
+    KeyPress {
+        modified_key: keyboard::key::Key,
+        modifiers: keyboard::Modifiers,
+    },
 }
 
 pub struct Terminal {
     term: wezterm_term::Terminal,
+    id: Option<Id>,
 }
 
 #[derive(Debug)]
@@ -51,7 +56,12 @@ impl Terminal {
         let term =
             wezterm_term::Terminal::new(size, Arc::new(config), "frozen_term", "0.1", writer);
 
-        Self { term }
+        Self { term, id: None }
+    }
+
+    pub fn id(mut self, id: impl Into<Id>) -> Self {
+        self.id = Some(id.into());
+        self
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -60,17 +70,20 @@ impl Terminal {
                 self.term.resize(size);
                 Task::none()
             }
+            Message::KeyPress {
+                modified_key: key,
+                modifiers,
+            } => {
+                if let Some((key, modifiers)) = transform_key(key, modifiers) {
+                    self.term.key_down(key, modifiers).unwrap();
+                }
+                Task::none()
+            }
         }
     }
 
     pub fn advance_bytes<B: AsRef<[u8]>>(&mut self, bytes: B) {
         self.term.advance_bytes(bytes);
-    }
-
-    pub fn key_press(&mut self, key: iced::keyboard::Key, modifiers: iced::keyboard::Modifiers) {
-        if let Some((key, modifiers)) = transform_key(key, modifiers) {
-            self.term.key_down(key, modifiers).unwrap();
-        }
     }
 
     pub fn get_title(&self) -> &str {
@@ -91,7 +104,7 @@ impl Terminal {
         <Theme as iced::widget::container::Catalog>::Class<'static>:
             From<iced::widget::container::StyleFn<'static, Theme>>,
     {
-        Element::new(TerminalWidget::new(self, iced::Font::MONOSPACE))
+        Element::new(TerminalWidget::new(self, iced::Font::MONOSPACE).id_maybe(self.id.clone()))
     }
 }
 
@@ -105,28 +118,51 @@ fn transform_key(
             Some(wezterm_term::KeyCode::Char(c))
         }
         iced::keyboard::Key::Named(named) => match named {
-            key::Named::Enter => Some(wezterm_term::KeyCode::Enter),
-            key::Named::Space => Some(wezterm_term::KeyCode::Char(' ')),
-            key::Named::Backspace => Some(wezterm_term::KeyCode::Backspace),
-            key::Named::Delete => Some(wezterm_term::KeyCode::Delete),
-            key::Named::ArrowLeft => Some(wezterm_term::KeyCode::LeftArrow),
-            key::Named::ArrowRight => Some(wezterm_term::KeyCode::RightArrow),
-            key::Named::ArrowUp => Some(wezterm_term::KeyCode::UpArrow),
-            key::Named::ArrowDown => Some(wezterm_term::KeyCode::DownArrow),
-            key::Named::Tab => Some(wezterm_term::KeyCode::Tab),
-            key::Named::Escape => Some(wezterm_term::KeyCode::Escape),
-            key::Named::F1 => Some(wezterm_term::KeyCode::Function(1)),
-            key::Named::F2 => Some(wezterm_term::KeyCode::Function(2)),
-            key::Named::F3 => Some(wezterm_term::KeyCode::Function(3)),
-            key::Named::F4 => Some(wezterm_term::KeyCode::Function(4)),
-            key::Named::F5 => Some(wezterm_term::KeyCode::Function(5)),
-            key::Named::F6 => Some(wezterm_term::KeyCode::Function(6)),
-            key::Named::F7 => Some(wezterm_term::KeyCode::Function(7)),
-            key::Named::F8 => Some(wezterm_term::KeyCode::Function(8)),
-            key::Named::F9 => Some(wezterm_term::KeyCode::Function(9)),
-            key::Named::F10 => Some(wezterm_term::KeyCode::Function(10)),
-            key::Named::F11 => Some(wezterm_term::KeyCode::Function(11)),
-            key::Named::F12 => Some(wezterm_term::KeyCode::Function(12)),
+            keyboard::key::Named::Enter => Some(wezterm_term::KeyCode::Enter),
+            keyboard::key::Named::Space => Some(wezterm_term::KeyCode::Char(' ')),
+            keyboard::key::Named::Backspace => Some(wezterm_term::KeyCode::Backspace),
+            keyboard::key::Named::Delete => Some(wezterm_term::KeyCode::Delete),
+            keyboard::key::Named::ArrowLeft => Some(wezterm_term::KeyCode::LeftArrow),
+            keyboard::key::Named::ArrowRight => Some(wezterm_term::KeyCode::RightArrow),
+            keyboard::key::Named::ArrowUp => Some(wezterm_term::KeyCode::UpArrow),
+            keyboard::key::Named::ArrowDown => Some(wezterm_term::KeyCode::DownArrow),
+            keyboard::key::Named::Tab => Some(wezterm_term::KeyCode::Tab),
+            keyboard::key::Named::Escape => Some(wezterm_term::KeyCode::Escape),
+            keyboard::key::Named::F1 => Some(wezterm_term::KeyCode::Function(1)),
+            keyboard::key::Named::F2 => Some(wezterm_term::KeyCode::Function(2)),
+            keyboard::key::Named::F3 => Some(wezterm_term::KeyCode::Function(3)),
+            keyboard::key::Named::F4 => Some(wezterm_term::KeyCode::Function(4)),
+            keyboard::key::Named::F5 => Some(wezterm_term::KeyCode::Function(5)),
+            keyboard::key::Named::F6 => Some(wezterm_term::KeyCode::Function(6)),
+            keyboard::key::Named::F7 => Some(wezterm_term::KeyCode::Function(7)),
+            keyboard::key::Named::F8 => Some(wezterm_term::KeyCode::Function(8)),
+            keyboard::key::Named::F9 => Some(wezterm_term::KeyCode::Function(9)),
+            keyboard::key::Named::F10 => Some(wezterm_term::KeyCode::Function(10)),
+            keyboard::key::Named::F11 => Some(wezterm_term::KeyCode::Function(11)),
+            keyboard::key::Named::F12 => Some(wezterm_term::KeyCode::Function(12)),
+            keyboard::key::Named::F13 => Some(wezterm_term::KeyCode::Function(13)),
+            keyboard::key::Named::F14 => Some(wezterm_term::KeyCode::Function(14)),
+            keyboard::key::Named::F15 => Some(wezterm_term::KeyCode::Function(15)),
+            keyboard::key::Named::F16 => Some(wezterm_term::KeyCode::Function(16)),
+            keyboard::key::Named::F17 => Some(wezterm_term::KeyCode::Function(17)),
+            keyboard::key::Named::F18 => Some(wezterm_term::KeyCode::Function(18)),
+            keyboard::key::Named::F19 => Some(wezterm_term::KeyCode::Function(19)),
+            keyboard::key::Named::F20 => Some(wezterm_term::KeyCode::Function(20)),
+            keyboard::key::Named::F21 => Some(wezterm_term::KeyCode::Function(21)),
+            keyboard::key::Named::F22 => Some(wezterm_term::KeyCode::Function(22)),
+            keyboard::key::Named::F23 => Some(wezterm_term::KeyCode::Function(23)),
+            keyboard::key::Named::F24 => Some(wezterm_term::KeyCode::Function(24)),
+            keyboard::key::Named::F25 => Some(wezterm_term::KeyCode::Function(25)),
+            keyboard::key::Named::F26 => Some(wezterm_term::KeyCode::Function(26)),
+            keyboard::key::Named::F27 => Some(wezterm_term::KeyCode::Function(27)),
+            keyboard::key::Named::F28 => Some(wezterm_term::KeyCode::Function(28)),
+            keyboard::key::Named::F29 => Some(wezterm_term::KeyCode::Function(29)),
+            keyboard::key::Named::F30 => Some(wezterm_term::KeyCode::Function(30)),
+            keyboard::key::Named::F31 => Some(wezterm_term::KeyCode::Function(31)),
+            keyboard::key::Named::F32 => Some(wezterm_term::KeyCode::Function(32)),
+            keyboard::key::Named::F33 => Some(wezterm_term::KeyCode::Function(33)),
+            keyboard::key::Named::F34 => Some(wezterm_term::KeyCode::Function(34)),
+            keyboard::key::Named::F35 => Some(wezterm_term::KeyCode::Function(35)),
             _ => None,
         },
         _ => None,
@@ -223,8 +259,8 @@ where
         }
     }
 
-    pub fn id(mut self, id: impl Into<Id>) -> Self {
-        self.id = Some(id.into());
+    pub fn id_maybe(mut self, id: Option<Id>) -> Self {
+        self.id = id;
         self
     }
 }
@@ -373,7 +409,7 @@ where
         _viewport: &iced::Rectangle,
     ) -> iced::advanced::graphics::core::event::Status {
         match event {
-            iced::Event::Window(iced::window::Event::RedrawRequested(event)) => {
+            iced::Event::Window(iced::window::Event::RedrawRequested(_event)) => {
                 let term = &self.term.term;
                 let screen = term.screen();
 
@@ -400,17 +436,28 @@ where
 
                 iced::advanced::graphics::core::event::Status::Captured
             }
+            iced::Event::Mouse(iced::mouse::Event::ButtonPressed(_))
+            | iced::Event::Touch(iced::touch::Event::FingerPressed { .. }) => {
+                let state = tree.state.downcast_mut::<State<Renderer>>();
+
+                state.focused = true;
+
+                iced::advanced::graphics::core::event::Status::Captured
+            }
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
-                key,
                 modified_key,
-                physical_key,
-                location,
                 modifiers,
-                text,
+                ..
             }) => {
                 let state = tree.state.downcast_mut::<State<Renderer>>();
 
                 if state.focused {
+                    let message = Message::KeyPress {
+                        modified_key: modified_key,
+                        modifiers: modifiers,
+                    };
+                    shell.publish(message);
+
                     iced::advanced::graphics::core::event::Status::Captured
                 } else {
                     iced::advanced::graphics::core::event::Status::Ignored

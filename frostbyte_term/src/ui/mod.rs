@@ -4,13 +4,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use frozen_term::{Terminal, TerminalSize};
-use iced::{
-    Element, Subscription, Task,
-    futures::SinkExt,
-    keyboard::{self, Key, Modifiers},
-    stream::channel,
-};
+use frozen_term::Terminal;
+use iced::{Element, Subscription, Task, futures::SinkExt, stream::channel};
 use portable_pty::{Child, PtyPair, PtySize};
 use tokio::task::{JoinHandle, spawn_blocking};
 
@@ -19,8 +14,6 @@ use tokio::task::{JoinHandle, spawn_blocking};
 pub enum Message {
     Terminal(frozen_term::Message),
     TerminalOutput(Vec<u8>),
-    KeyPress(Key, Modifiers),
-    Resize(TerminalSize),
 }
 
 pub struct UI {
@@ -97,20 +90,10 @@ impl UI {
                     self.pty.master.resize(pty_size).unwrap();
                 }
 
-                self.term.update(msg);
-
-                Task::none()
+                self.term.update(msg).map(Message::Terminal)
             }
             Message::TerminalOutput(output) => {
                 self.term.advance_bytes(output);
-                Task::none()
-            }
-            Message::KeyPress(key, modifiers) => {
-                self.term.key_press(key, modifiers);
-                Task::none()
-            }
-            Message::Resize(size) => {
-                self.term.resize(size);
                 Task::none()
             }
         }
@@ -123,34 +106,31 @@ impl UI {
     pub fn subscription(&self) -> Subscription<Message> {
         let mut reader = self.pty.master.try_clone_reader().unwrap();
         let copy_handle = self.copy_handle.clone();
-        Subscription::batch(vec![
-            keyboard::on_key_press(|key, modifiers| Some(Message::KeyPress(key, modifiers))),
-            Subscription::run_with_id(
-                1,
-                channel(1, |mut output| async move {
-                    let (send, mut recv) = tokio::sync::mpsc::unbounded_channel();
+        Subscription::batch(vec![Subscription::run_with_id(
+            1,
+            channel(1, |mut output| async move {
+                let (send, mut recv) = tokio::sync::mpsc::unbounded_channel();
 
-                    let handle = spawn_blocking(move || {
-                        let mut buf = vec![0u8; 1024];
-                        loop {
-                            let read = reader.read(&mut buf).unwrap();
-                            if read == 0 {
-                                println!("EOF");
-                                break;
-                            }
-                            send.send(buf[..read].to_vec()).unwrap();
+                let handle = spawn_blocking(move || {
+                    let mut buf = vec![0u8; 1024];
+                    loop {
+                        let read = reader.read(&mut buf).unwrap();
+                        if read == 0 {
+                            println!("EOF");
+                            break;
                         }
-                    });
-
-                    {
-                        *copy_handle.lock().unwrap() = Some(handle);
+                        send.send(buf[..read].to_vec()).unwrap();
                     }
+                });
 
-                    while let Some(s) = recv.recv().await {
-                        output.send(Message::TerminalOutput(s)).await.unwrap();
-                    }
-                }),
-            ),
-        ])
+                {
+                    *copy_handle.lock().unwrap() = Some(handle);
+                }
+
+                while let Some(s) = recv.recv().await {
+                    output.send(Message::TerminalOutput(s)).await.unwrap();
+                }
+            }),
+        )])
     }
 }
