@@ -1,0 +1,465 @@
+use std::sync::Arc;
+
+use iced::{
+    Color, Element, Length, Point, Rectangle, Size, Task, Vector,
+    advanced::{
+        Shell, Text,
+        layout::Node,
+        renderer::Quad,
+        text::{Paragraph, Renderer},
+        widget::operation::Focusable,
+    },
+    alignment::{Horizontal, Vertical},
+    keyboard::key,
+    widget::text::{LineHeight, Shaping, Wrapping},
+};
+use wezterm_term::{
+    CellAttributes, TerminalConfiguration,
+    color::{ColorAttribute, ColorPalette},
+};
+
+pub use wezterm_term::TerminalSize;
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    Resize(TerminalSize),
+}
+
+pub struct Terminal {
+    term: wezterm_term::Terminal,
+}
+
+#[derive(Debug)]
+pub struct Config {}
+
+impl TerminalConfiguration for Config {
+    fn color_palette(&self) -> wezterm_term::color::ColorPalette {
+        ColorPalette::default()
+    }
+}
+
+impl Terminal {
+    pub fn new(rows: u16, cols: u16, writer: Box<dyn std::io::Write + Send>) -> Self {
+        let size = TerminalSize {
+            rows: rows as usize,
+            cols: cols as usize,
+            ..Default::default()
+        };
+
+        let config = Config {};
+
+        let term =
+            wezterm_term::Terminal::new(size, Arc::new(config), "frozen_term", "0.1", writer);
+
+        Self { term }
+    }
+
+    pub fn update(&mut self, message: Message) -> Task<Message> {
+        match message {
+            Message::Resize(size) => {
+                self.term.resize(size);
+                Task::none()
+            }
+        }
+    }
+
+    pub fn advance_bytes<B: AsRef<[u8]>>(&mut self, bytes: B) {
+        self.term.advance_bytes(bytes);
+    }
+
+    pub fn key_press(&mut self, key: iced::keyboard::Key, modifiers: iced::keyboard::Modifiers) {
+        if let Some((key, modifiers)) = transform_key(key, modifiers) {
+            self.term.key_down(key, modifiers).unwrap();
+        }
+    }
+
+    pub fn get_title(&self) -> &str {
+        self.term.get_title()
+    }
+
+    pub fn resize(&mut self, size: TerminalSize) {
+        self.term.resize(size)
+    }
+
+    pub fn view<'a, Theme, Renderer>(&'a self) -> Element<'a, Message, Theme, Renderer>
+    where
+        Renderer: iced::advanced::text::Renderer<Font = iced::Font> + 'static,
+        Theme: iced::widget::text::Catalog + 'static,
+        Theme: iced::widget::container::Catalog,
+        <Theme as iced::widget::text::Catalog>::Class<'static>:
+            From<iced::widget::text::StyleFn<'static, Theme>>,
+        <Theme as iced::widget::container::Catalog>::Class<'static>:
+            From<iced::widget::container::StyleFn<'static, Theme>>,
+    {
+        Element::new(TerminalWidget::new(self, iced::Font::MONOSPACE))
+    }
+}
+
+fn transform_key(
+    key: iced::keyboard::Key,
+    modifiers: iced::keyboard::Modifiers,
+) -> Option<(wezterm_term::KeyCode, wezterm_term::KeyModifiers)> {
+    let wez_key = match key {
+        iced::keyboard::Key::Character(c) => {
+            let c = c.chars().next().unwrap();
+            Some(wezterm_term::KeyCode::Char(c))
+        }
+        iced::keyboard::Key::Named(named) => match named {
+            key::Named::Enter => Some(wezterm_term::KeyCode::Enter),
+            key::Named::Space => Some(wezterm_term::KeyCode::Char(' ')),
+            key::Named::Backspace => Some(wezterm_term::KeyCode::Backspace),
+            key::Named::Delete => Some(wezterm_term::KeyCode::Delete),
+            key::Named::ArrowLeft => Some(wezterm_term::KeyCode::LeftArrow),
+            key::Named::ArrowRight => Some(wezterm_term::KeyCode::RightArrow),
+            key::Named::ArrowUp => Some(wezterm_term::KeyCode::UpArrow),
+            key::Named::ArrowDown => Some(wezterm_term::KeyCode::DownArrow),
+            key::Named::Tab => Some(wezterm_term::KeyCode::Tab),
+            key::Named::Escape => Some(wezterm_term::KeyCode::Escape),
+            key::Named::F1 => Some(wezterm_term::KeyCode::Function(1)),
+            key::Named::F2 => Some(wezterm_term::KeyCode::Function(2)),
+            key::Named::F3 => Some(wezterm_term::KeyCode::Function(3)),
+            key::Named::F4 => Some(wezterm_term::KeyCode::Function(4)),
+            key::Named::F5 => Some(wezterm_term::KeyCode::Function(5)),
+            key::Named::F6 => Some(wezterm_term::KeyCode::Function(6)),
+            key::Named::F7 => Some(wezterm_term::KeyCode::Function(7)),
+            key::Named::F8 => Some(wezterm_term::KeyCode::Function(8)),
+            key::Named::F9 => Some(wezterm_term::KeyCode::Function(9)),
+            key::Named::F10 => Some(wezterm_term::KeyCode::Function(10)),
+            key::Named::F11 => Some(wezterm_term::KeyCode::Function(11)),
+            key::Named::F12 => Some(wezterm_term::KeyCode::Function(12)),
+            _ => None,
+        },
+        _ => None,
+    };
+
+    match wez_key {
+        None => None,
+        Some(key) => {
+            let mut wez_modifiers = wezterm_term::KeyModifiers::empty();
+
+            if modifiers.shift() {
+                wez_modifiers |= wezterm_term::KeyModifiers::SHIFT;
+            }
+            if modifiers.alt() {
+                wez_modifiers |= wezterm_term::KeyModifiers::ALT;
+            }
+            if modifiers.control() {
+                wez_modifiers |= wezterm_term::KeyModifiers::CTRL;
+            }
+            if modifiers.logo() {
+                wez_modifiers |= wezterm_term::KeyModifiers::SUPER;
+            }
+
+            Some((key, wez_modifiers))
+        }
+    }
+}
+
+fn get_color(color: ColorAttribute, palette: &ColorPalette) -> Option<iced::Color> {
+    match color {
+        ColorAttribute::TrueColorWithPaletteFallback(srgba_tuple, _)
+        | ColorAttribute::TrueColorWithDefaultFallback(srgba_tuple) => {
+            let (r, g, b, a) = srgba_tuple.to_tuple_rgba();
+            Some(iced::Color::from_rgba(r, g, b, a))
+        }
+        ColorAttribute::PaletteIndex(index) => {
+            let (r, g, b, a) = palette.colors.0[index as usize].to_tuple_rgba();
+            Some(iced::Color::from_rgba(r, g, b, a))
+        }
+        ColorAttribute::Default => None,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Id(iced::advanced::widget::Id);
+
+impl Id {
+    /// Creates a custom [`Id`].
+    pub fn new(id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
+        Self(iced::advanced::widget::Id::new(id))
+    }
+
+    /// Creates a unique [`Id`].
+    ///
+    /// This function produces a different [`Id`] every time it is called.
+    pub fn unique() -> Self {
+        Self(iced::advanced::widget::Id::unique())
+    }
+}
+
+impl From<Id> for iced::advanced::widget::Id {
+    fn from(id: Id) -> Self {
+        id.0
+    }
+}
+
+impl From<&'static str> for Id {
+    fn from(id: &'static str) -> Self {
+        Self::new(id)
+    }
+}
+
+impl From<String> for Id {
+    fn from(id: String) -> Self {
+        Self::new(id)
+    }
+}
+
+struct TerminalWidget<'a, R: iced::advanced::text::Renderer> {
+    id: Option<Id>,
+    term: &'a Terminal,
+    font: R::Font,
+}
+
+impl<'a, R> TerminalWidget<'a, R>
+where
+    R: iced::advanced::text::Renderer,
+{
+    pub fn new(term: &'a Terminal, font: impl Into<R::Font>) -> Self {
+        Self {
+            id: None,
+            term,
+            font: font.into(),
+        }
+    }
+
+    pub fn id(mut self, id: impl Into<Id>) -> Self {
+        self.id = Some(id.into());
+        self
+    }
+}
+
+struct State<R: Renderer> {
+    focused: bool,
+    paragraph: R::Paragraph,
+    spans: Vec<iced::advanced::text::Span<'static, (), R::Font>>,
+    last_render_seqno: usize,
+}
+
+impl<Renderer> Focusable for State<Renderer>
+where
+    Renderer: iced::advanced::text::Renderer,
+{
+    fn is_focused(&self) -> bool {
+        self.focused
+    }
+
+    fn focus(&mut self) {
+        self.focused = true;
+    }
+
+    fn unfocus(&mut self) {
+        self.focused = false;
+    }
+}
+
+impl<Theme, Renderer> iced::advanced::widget::Widget<Message, Theme, Renderer>
+    for TerminalWidget<'_, Renderer>
+where
+    Renderer: iced::advanced::text::Renderer,
+    Renderer: 'static,
+{
+    fn tag(&self) -> iced::advanced::widget::tree::Tag {
+        iced::advanced::widget::tree::Tag::of::<State<Renderer>>()
+    }
+
+    fn state(&self) -> iced::advanced::widget::tree::State {
+        iced::advanced::widget::tree::State::new(State::<Renderer> {
+            focused: false,
+            paragraph: Renderer::Paragraph::default(),
+            spans: Vec::new(),
+            last_render_seqno: 0,
+        })
+    }
+
+    fn size(&self) -> iced::Size<iced::Length> {
+        Size::new(Length::Fill, Length::Fill)
+    }
+
+    fn operate(
+        &self,
+        tree: &mut iced::advanced::widget::Tree,
+        _layout: iced::advanced::Layout<'_>,
+        _renderer: &Renderer,
+        operation: &mut dyn iced::advanced::widget::Operation,
+    ) {
+        let state = tree.state.downcast_mut::<State<Renderer>>();
+
+        operation.focusable(state, self.id.as_ref().map(|id| &id.0));
+    }
+
+    fn layout(
+        &self,
+        tree: &mut iced::advanced::widget::Tree,
+        renderer: &Renderer,
+        limits: &iced::advanced::layout::Limits,
+    ) -> iced::advanced::layout::Node {
+        let state = tree.state.downcast_mut::<State<Renderer>>();
+        let term = &self.term.term;
+        let current_seqno = term.current_seqno();
+
+        if state.last_render_seqno != current_seqno {
+            let screen = term.screen();
+
+            let range = screen.phys_range(&(0..screen.physical_rows as i64));
+            let term_lines = screen.lines_in_phys_range(range);
+
+            let mut current_text = String::new();
+            let mut current_attrs = CellAttributes::default();
+            state.spans.clear();
+
+            let palette = term.palette();
+
+            for line in term_lines {
+                for cell in line.visible_cells() {
+                    if cell.attrs() != &current_attrs {
+                        if !current_text.is_empty() {
+                            let foreground = get_color(current_attrs.foreground(), &palette);
+                            let background = get_color(current_attrs.background(), &palette);
+
+                            let span = iced::advanced::text::Span::new(current_text.clone())
+                                .color_maybe(foreground)
+                                .background_maybe(background);
+
+                            state.spans.push(span);
+                            current_text.clear();
+                        }
+                        current_attrs = cell.attrs().clone();
+                    }
+
+                    current_text.push_str(cell.str());
+                }
+                current_text.push('\n');
+            }
+
+            if current_text.len() > 1 {
+                let foreground = get_color(current_attrs.foreground(), &palette);
+                let background = get_color(current_attrs.background(), &palette);
+
+                let span = iced::advanced::text::Span::new(current_text)
+                    .color_maybe(foreground)
+                    .background_maybe(background);
+
+                state.spans.push(span);
+            }
+
+            let text = Text {
+                content: state.spans.as_ref(),
+                bounds: limits.max(),
+                size: renderer.default_size(),
+                line_height: LineHeight::default(),
+                font: self.font,
+                horizontal_alignment: Horizontal::Left,
+                vertical_alignment: Vertical::Top,
+                shaping: Shaping::Advanced,
+                wrapping: Wrapping::None,
+            };
+
+            state.paragraph = Paragraph::with_spans(text);
+        }
+
+        Node::new(limits.max())
+    }
+
+    fn on_event(
+        &mut self,
+        tree: &mut iced::advanced::widget::Tree,
+        event: iced::Event,
+        layout: iced::advanced::Layout<'_>,
+        _cursor: iced::advanced::mouse::Cursor,
+        renderer: &Renderer,
+        _clipboard: &mut dyn iced::advanced::Clipboard,
+        shell: &mut Shell<'_, Message>,
+        _viewport: &iced::Rectangle,
+    ) -> iced::advanced::graphics::core::event::Status {
+        match event {
+            iced::Event::Window(iced::window::Event::RedrawRequested(event)) => {
+                let term = &self.term.term;
+                let screen = term.screen();
+
+                let widget_width = layout.bounds().width;
+                let widget_height = layout.bounds().height;
+                let line_height = renderer.default_size().0;
+                let char_width = line_height * 0.6;
+
+                let target_line_count = (0.77 * widget_height / line_height) as usize;
+                let target_col_count = (widget_width / char_width) as usize;
+
+                if screen.physical_rows != target_line_count
+                    || screen.physical_cols != target_col_count
+                {
+                    let size = TerminalSize {
+                        rows: target_line_count,
+                        cols: target_col_count,
+                        pixel_height: widget_height as usize,
+                        pixel_width: widget_width as usize,
+                        ..Default::default()
+                    };
+                    shell.publish(Message::Resize(size));
+                }
+
+                iced::advanced::graphics::core::event::Status::Captured
+            }
+            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key,
+                modified_key,
+                physical_key,
+                location,
+                modifiers,
+                text,
+            }) => {
+                let state = tree.state.downcast_mut::<State<Renderer>>();
+
+                if state.focused {
+                    iced::advanced::graphics::core::event::Status::Captured
+                } else {
+                    iced::advanced::graphics::core::event::Status::Ignored
+                }
+            }
+            _ => iced::advanced::graphics::core::event::Status::Ignored,
+        }
+    }
+
+    fn draw(
+        &self,
+        tree: &iced::advanced::widget::Tree,
+        renderer: &mut Renderer,
+        _theme: &Theme,
+        _style: &iced::advanced::renderer::Style,
+        layout: iced::advanced::Layout<'_>,
+        _cursor: iced::advanced::mouse::Cursor,
+        viewport: &iced::Rectangle,
+    ) {
+        let Some(bounds) = layout.bounds().intersection(viewport) else {
+            return;
+        };
+
+        let state = tree.state.downcast_ref::<State<Renderer>>();
+
+        for (index, span) in state.spans.iter().enumerate() {
+            if let Some(highlight) = span.highlight {
+                let translation = layout.position() - Point::ORIGIN;
+                let regions = state.paragraph.span_bounds(index);
+
+                for bounds in &regions {
+                    let bounds = Rectangle::new(
+                        bounds.position() - Vector::new(span.padding.left, span.padding.top),
+                        bounds.size()
+                            + Size::new(span.padding.horizontal(), span.padding.vertical()),
+                    );
+
+                    renderer.fill_quad(
+                        Quad {
+                            bounds: bounds + translation,
+                            border: highlight.border,
+                            ..Default::default()
+                        },
+                        highlight.background,
+                    );
+                }
+            }
+        }
+
+        renderer.fill_paragraph(&state.paragraph, bounds.position(), Color::WHITE, bounds);
+    }
+}

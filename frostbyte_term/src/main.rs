@@ -1,4 +1,3 @@
-pub mod components;
 mod ui;
 
 use ui::UI;
